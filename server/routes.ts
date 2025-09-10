@@ -130,18 +130,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Read and parse GPS file
       const fileContent = fs.readFileSync(req.file.path, 'utf-8');
       let gpsData;
-      
       if (req.file.originalname.endsWith('.json')) {
         gpsData = JSON.parse(fileContent);
       } else if (req.file.originalname.endsWith('.csv')) {
           const lines = fileContent.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-
           // On saute la 1ère ligne (header)
           gpsData = lines.slice(1).map(line => {
             const cols = line.split(',');
 
+            const timestampMs = parseFloat(cols[0]);
+            const timestampSec = timestampMs / 1000;
+            
             return {
-              timestamp: parseFloat(cols[0]), // timestamp_utc_gps
+              timestamp: timestampSec, // Convertir les millisecondes en secondes
               lat: parseFloat(cols[2]),       // latitude_dd
               lon: parseFloat(cols[3])        // longitude_dd
             };

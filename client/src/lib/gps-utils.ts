@@ -92,8 +92,21 @@ export function getGPSForFrame(
   frameIndex: number,
   fps: number
 ): GPSPoint | null {
+  if (gpsPoints.length === 0) return null;
+  
+  // Trier les points GPS par timestamp
+  const sortedPoints = [...gpsPoints].sort((a, b) => a.timestamp - b.timestamp);
+  
+  // Calculer le timestamp de la frame
   const timestamp = frameIndex / fps;
-  return interpolateGPS(gpsPoints, timestamp);
+  
+  // Obtenir le premier timestamp GPS
+  const firstGpsTimestamp = sortedPoints[0].timestamp;
+  
+  // Ajuster le timestamp cible en ajoutant le premier timestamp GPS
+  const adjustedTimestamp = timestamp + firstGpsTimestamp;
+  
+  return interpolateGPS(gpsPoints, adjustedTimestamp);
 }
 
 export function calculateDistance(point1: GPSPoint, point2: GPSPoint): number {

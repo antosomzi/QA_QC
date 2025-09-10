@@ -42,25 +42,41 @@ export default function VideoPlayer({
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [currentBBox, setCurrentBBox] = useState<BoundingBox | null>(null);
+  const [isManualNavigation, setIsManualNavigation] = useState(false);
+  const [pendingFrameUpdate, setPendingFrameUpdate] = useState<number | null>(null);
 
-  // Update video time when frame changes
+  // Update video time when frame changes (seulement pendant la navigation manuelle)
   useEffect(() => {
-    if (videoRef.current && video.fps) {
-      const timeInSeconds = currentFrame / video.fps;
+    if (videoRef.current && video.fps && isManualNavigation && pendingFrameUpdate !== null) {
+      const timeInSeconds = pendingFrameUpdate / video.fps;
       videoRef.current.currentTime = timeInSeconds;
       setCurrentTime(timeInSeconds);
     }
-  }, [currentFrame, video.fps]);
+  }, [pendingFrameUpdate, video.fps, isManualNavigation]);
 
-  // Handle video time updates
+  // Update parent frame state when pending update is set
+  useEffect(() => {
+    if (pendingFrameUpdate !== null) {
+      onFrameChange(pendingFrameUpdate);
+      setPendingFrameUpdate(null);
+    }
+  }, [pendingFrameUpdate, onFrameChange]);
+
+  // Handle video time updates - source de vérité unique
   const handleTimeUpdate = useCallback(() => {
+    // Ignorer les mises à jour pendant la navigation manuelle
+    if (isManualNavigation) return;
+    
     if (videoRef.current && video.fps) {
       const time = videoRef.current.currentTime;
       const frame = Math.floor(time * video.fps);
       setCurrentTime(time);
-      onFrameChange(frame);
+      // Ne mettre à jour la frame que si elle a vraiment changé
+      if (frame !== currentFrame) {
+        onFrameChange(frame);
+      }
     }
-  }, [video.fps, onFrameChange]);
+  }, [video.fps, onFrameChange, isManualNavigation, currentFrame]);
 
   // Handle video metadata loaded
   const handleLoadedMetadata = useCallback(() => {
@@ -84,18 +100,24 @@ export default function VideoPlayer({
   // Frame navigation
   const goToPreviousFrame = useCallback(() => {
     if (video.fps && currentFrame > 0) {
-      onFrameChange(currentFrame - 1);
+      setIsManualNavigation(true);
+      setPendingFrameUpdate(currentFrame - 1);
+      // Réactiver la mise à jour automatique après un court délai
+      setTimeout(() => setIsManualNavigation(false), 100);
     }
-  }, [currentFrame, video.fps, onFrameChange]);
+  }, [currentFrame, video.fps]);
 
   const goToNextFrame = useCallback(() => {
     if (video.fps && duration) {
       const totalFrames = Math.floor(duration * video.fps);
       if (currentFrame < totalFrames - 1) {
-        onFrameChange(currentFrame + 1);
+        setIsManualNavigation(true);
+        setPendingFrameUpdate(currentFrame + 1);
+        // Réactiver la mise à jour automatique après un court délai
+        setTimeout(() => setIsManualNavigation(false), 100);
       }
     }
-  }, [currentFrame, video.fps, duration, onFrameChange]);
+  }, [currentFrame, video.fps, duration]);
 
   // Canvas drawing functions
   const getCanvasCoordinates = useCallback((e: React.MouseEvent) => {
