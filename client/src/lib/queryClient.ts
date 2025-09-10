@@ -12,13 +12,20 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  // Handle FormData differently - let browser set Content-Type
+  const isFormData = data instanceof FormData;
+  
+  console.log(`Sending ${method} request to ${url}`, { data, isFormData });
+  
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
-    body: data ? JSON.stringify(data) : undefined,
+    headers: data && !isFormData ? { "Content-Type": "application/json" } : {},
+    body: data ? (isFormData ? data : JSON.stringify(data)) : undefined,
     credentials: "include",
   });
 
+  console.log(`Received response for ${method} ${url}:`, res.status, res.statusText);
+  
   await throwIfResNotOk(res);
   return res;
 }

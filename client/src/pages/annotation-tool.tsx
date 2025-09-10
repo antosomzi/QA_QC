@@ -6,7 +6,7 @@ import AnnotationList from "@/components/annotation-list";
 import FileUpload from "@/components/file-upload";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Video, GpsData, Annotation, AnnotationExport } from "@shared/schema";
 
 export default function AnnotationTool() {
@@ -34,6 +34,8 @@ export default function AnnotationTool() {
 
   const handleVideoUpload = useCallback((videoId: string) => {
     setSelectedVideoId(videoId);
+    // Invalidate the videos query to refresh the list
+    queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
     toast({
       title: "Video uploaded successfully",
       description: "You can now upload GPS data and start annotating.",
@@ -190,20 +192,20 @@ export default function AnnotationTool() {
       <div className="flex h-[calc(100vh-80px)]">
         {/* Left Panel - Video Player */}
         <div className="flex-1 bg-background border-r border-border">
-          {!selectedVideo ? (
-            <FileUpload onVideoUpload={handleVideoUpload} />
-          ) : (
-            <VideoPlayer
-              video={selectedVideo}
-              gpsData={gpsData}
-              annotations={annotations}
-              currentFrame={currentFrame}
-              onFrameChange={setCurrentFrame}
-              onAnnotationCreate={handleAnnotationCreate}
-              selectedAnnotationId={selectedAnnotationId}
-              onAnnotationSelect={setSelectedAnnotationId}
-            />
-          )}
+        {selectedVideo && gpsData ? (
+          <VideoPlayer
+            video={selectedVideo}
+            gpsData={gpsData}
+            annotations={annotations}
+            currentFrame={currentFrame}
+            onFrameChange={setCurrentFrame}
+            onAnnotationCreate={handleAnnotationCreate}
+            selectedAnnotationId={selectedAnnotationId}
+            onAnnotationSelect={setSelectedAnnotationId}
+          />
+        ) : (
+        <FileUpload onVideoUpload={handleVideoUpload} />
+    )}
         </div>
 
         {/* Right Panel - Map and Annotations */}

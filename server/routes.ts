@@ -5,10 +5,17 @@ import { insertVideoSchema, insertGpsDataSchema, insertAnnotationSchema } from "
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { randomUUID } from "crypto";
 
 // Configure multer for file uploads
 const upload = multer({
-  dest: 'uploads/',
+  storage: multer.diskStorage({
+    destination: 'uploads/',
+    filename: function (req, file, cb) {
+          // Conserver le même nom que le fichier original
+          cb(null, file.originalname);
+        }
+  }),
   limits: {
     fileSize: 500 * 1024 * 1024, // 500MB limit
   },
@@ -16,6 +23,34 @@ const upload = multer({
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
+  // Debug route - temporary endpoint to see all data in memory
+  app.get("/api/debug/memory", async (_req, res) => {
+    try {
+      const videos = await storage.getAllVideos();
+      const allAnnotations = [];
+      const allGpsData = [];
+      
+      // Get all annotations for all videos
+      for (const video of videos) {
+        const annotations = await storage.getAnnotationsByVideoId(video.id);
+        allAnnotations.push(...annotations);
+        
+        const gpsData = await storage.getGpsDataByVideoId(video.id);
+        if (gpsData) {
+          allGpsData.push(gpsData);
+        }
+      }
+      
+      res.json({
+        videos,
+        annotations: allAnnotations,
+        gpsData: allGpsData
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch debug data", error: error.message });
+    }
+  });
+
   // Video routes
   app.post("/api/videos", upload.single('video'), async (req, res) => {
     try {
@@ -99,19 +134,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (req.file.originalname.endsWith('.json')) {
         gpsData = JSON.parse(fileContent);
       } else if (req.file.originalname.endsWith('.csv')) {
-        // Simple CSV parsing - assumes format: timestamp,lat,lon
-        const lines = fileContent.split('\n').slice(1); // Skip header
-        gpsData = lines.filter(line => line.trim()).map(line => {
-          const [timestamp, lat, lon] = line.split(',');
-          return {
-            timestamp: parseFloat(timestamp),
-            lat: parseFloat(lat),
-            lon: parseFloat(lon)
-          };
-        });
-      } else {
-        return res.status(400).json({ message: "Unsupported file format. Use JSON or CSV." });
-      }
+          const lines = fileContent.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+          // On saute la 1ère ligne (header)
+          gpsData = lines.slice(1).map(line => {
+            const cols = line.split(',');
+
+            return {
+              timestamp: parseFloat(cols[0]), // timestamp_utc_gps
+              lat: parseFloat(cols[2]),       // latitude_dd
+              lon: parseFloat(cols[3])        // longitude_dd
+            };
+          });
+        } else {
+          return res.status(400).json({ message: "Unsupported file format. Use JSON or CSV." });
+        }
 
       const gpsDataEntry = {
         videoId: req.body.videoId,

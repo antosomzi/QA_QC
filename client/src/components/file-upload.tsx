@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Upload, Video, MapPin } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface FileUploadProps {
   onVideoUpload: (videoId: string) => void;
@@ -24,7 +24,7 @@ export default function FileUpload({ onVideoUpload }: FileUploadProps) {
       video.preload = 'metadata';
       
       const getVideoMetadata = (): Promise<{ duration: number; width: number; height: number }> => {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
           video.onloadedmetadata = () => {
             resolve({
               duration: video.duration,
@@ -32,6 +32,11 @@ export default function FileUpload({ onVideoUpload }: FileUploadProps) {
               height: video.videoHeight,
             });
           };
+          
+          video.onerror = () => {
+            reject(new Error("Failed to load video metadata"));
+          };
+          
           video.src = URL.createObjectURL(file);
         });
       };
@@ -46,8 +51,8 @@ export default function FileUpload({ onVideoUpload }: FileUploadProps) {
       formData.append('fps', '30'); // Default FPS, can be detected from video
       formData.append('width', metadata.width.toString());
       formData.append('height', metadata.height.toString());
-
       const response = await apiRequest("POST", "/api/videos", formData);
+      console.log("Received response:", response);
       const videoData = await response.json();
       
       setUploadedVideoId(videoData.id);
@@ -60,7 +65,7 @@ export default function FileUpload({ onVideoUpload }: FileUploadProps) {
     } catch (error) {
       toast({
         title: "Upload failed",
-        description: "Failed to upload video file. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to upload video file. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -78,6 +83,9 @@ export default function FileUpload({ onVideoUpload }: FileUploadProps) {
       formData.append('videoId', uploadedVideoId);
 
       await apiRequest("POST", "/api/gps-data", formData);
+      
+      // Invalider les requêtes pour rafraîchir les données GPS
+      queryClient.invalidateQueries({ queryKey: ["/api/gps-data/video", uploadedVideoId] });
       
       toast({
         title: "GPS data uploaded successfully",
