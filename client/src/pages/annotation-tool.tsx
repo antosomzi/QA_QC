@@ -106,7 +106,10 @@ export default function AnnotationTool() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `annotations_${selectedVideoId}.json`;
+      // Utiliser le nom original de la vidéo pour le fichier d'export
+      const selectedVideo = videos.find(v => v.id === selectedVideoId);
+      const filename = selectedVideo ? selectedVideo.originalName.replace(/\.[^/.]+$/, "") : selectedVideoId;
+      a.download = `annotations_${filename}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -123,7 +126,7 @@ export default function AnnotationTool() {
         variant: "destructive",
       });
     }
-  }, [selectedVideoId, toast]);
+  }, [selectedVideoId, toast, videos]);
 
   const handleImportAnnotations = useCallback(async (file: File) => {
     try {

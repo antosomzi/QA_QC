@@ -123,6 +123,7 @@ export class MemStorage implements IStorage {
     return {
       video: {
         video_id: video.id,
+        original_name: video.originalName,
         fps: video.fps || 30,
         duration_ms: (video.duration || 0) * 1000
       },
@@ -146,9 +147,18 @@ export class MemStorage implements IStorage {
   }
 
   async importAnnotations(data: AnnotationExport): Promise<void> {
+    // Trouver la vidéo par son nom original
+    const videos = await this.getAllVideos();
+    const video = videos.find(v => v.originalName === data.video.original_name);
+    
+    if (!video) {
+      throw new Error(`Video with original name '${data.video.original_name}' not found`);
+    }
+    
+    // Utiliser l'ID de la vidéo trouvée pour importer les annotations
     for (const annData of data.annotations) {
       const annotation: InsertAnnotation = {
-        videoId: data.video.video_id,
+        videoId: video.id,
         frameIndex: annData.frame_index,
         frameTimestampMs: annData.frame_timestamp_ms,
         gpsLat: annData.gps.lat,

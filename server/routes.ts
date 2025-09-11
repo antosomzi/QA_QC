@@ -235,8 +235,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Video not found" });
       }
       
+      // Utiliser le nom original de la vidéo pour le nom du fichier
+      const video = await storage.getVideo(req.params.videoId);
+      const filename = video ? video.originalName.replace(/\.[^/.]+$/, "") : req.params.videoId;
+      
       res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Content-Disposition', `attachment; filename="annotations_${req.params.videoId}.json"`);
+      res.setHeader('Content-Disposition', `attachment; filename="annotations_${filename}.json"`);
       res.json(exportData);
     } catch (error) {
       res.status(500).json({ message: "Failed to export annotations" });

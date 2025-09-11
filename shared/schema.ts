@@ -80,6 +80,7 @@ export type BoundingBox = {
 export type AnnotationExport = {
   video: {
     video_id: string;
+    original_name: string;
     fps: number;
     duration_ms: number;
   };
