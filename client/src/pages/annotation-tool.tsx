@@ -1,49 +1,65 @@
 import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useParams } from "wouter";
 import VideoPlayer from "@/components/video-player";
 import MapPanel from "@/components/map-panel";
 import AnnotationList from "@/components/annotation-list";
 import FileUpload from "@/components/file-upload";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest } from "@/lib/queryClient";
 import type { Video, GpsData, Annotation, AnnotationExport } from "@shared/schema";
 
 export default function AnnotationTool() {
-  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
+  const params = useParams();
+  const folderId = params.folderId as string;
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [currentFrame, setCurrentFrame] = useState(0);
   const { toast } = useToast();
 
-  // Fetch videos
-  const { data: videos = [] } = useQuery<Video[]>({
-    queryKey: ["/api/videos"],
+  // Fetch videos for this folder
+  const { data: videos = [], refetch: refetchVideos } = useQuery<Video[]>({
+    queryKey: ["folder-videos", folderId],
+    queryFn: () => fetch(`/api/folders/${folderId}/videos`).then(res => res.json())
   });
 
+  // Set the selected video (since folder has only one video)
+  const selectedVideo = videos.length > 0 ? videos[0] : null;
+
   // Fetch GPS data for selected video
-  const { data: gpsData } = useQuery<GpsData>({
-    queryKey: ["/api/gps-data/video", selectedVideoId],
-    enabled: !!selectedVideoId,
+  const { data: gpsData, error: gpsDataError } = useQuery<GpsData>({
+    queryKey: ["video-gps", selectedVideo?.id],
+    queryFn: async () => {
+      if (!selectedVideo) return null;
+      const response = await fetch(`/api/gps-data/video/${selectedVideo.id}`);
+      const data = await response.json();
+      // Si c'est un message d'erreur, on le traite comme une erreur
+      if (data.message && data.message.includes('not found')) {
+        throw new Error(data.message);
+      }
+      return data;
+    },
+    enabled: !!selectedVideo,
   });
 
   // Fetch annotations for selected video
   const { data: annotations = [], refetch: refetchAnnotations } = useQuery<Annotation[]>({
-    queryKey: ["/api/annotations/video", selectedVideoId],
-    enabled: !!selectedVideoId,
+    queryKey: ["video-annotations", selectedVideo?.id],
+    queryFn: () => selectedVideo ? fetch(`/api/annotations/video/${selectedVideo.id}`).then(res => res.json()) : [],
+    enabled: !!selectedVideo,
   });
 
   const handleVideoUpload = useCallback((videoId: string) => {
-    setSelectedVideoId(videoId);
-    // Invalidate the videos query to refresh the list
-    queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
     toast({
       title: "Video uploaded successfully",
       description: "You can now upload GPS data and start annotating.",
     });
-  }, [toast]);
+    // Rafraîchir la liste des vidéos du dossier
+    refetchVideos();
+  }, [toast, refetchVideos]);
 
   const handleAnnotationCreate = useCallback(async (annotation: Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>) => {
-    if (!selectedVideoId) return;
+    if (!selectedVideo) return;
 
     try {
       await apiRequest("POST", "/api/annotations", annotation);
@@ -59,7 +75,7 @@ export default function AnnotationTool() {
         variant: "destructive",
       });
     }
-  }, [selectedVideoId, refetchAnnotations, toast]);
+  }, [selectedVideo, refetchAnnotations, toast]);
 
   const handleAnnotationUpdate = useCallback(async (id: string, updates: Partial<Annotation>) => {
     try {
@@ -96,10 +112,10 @@ export default function AnnotationTool() {
   }, [refetchAnnotations, toast]);
 
   const handleExportAnnotations = useCallback(async () => {
-    if (!selectedVideoId) return;
+    if (!selectedVideo) return;
 
     try {
-      const response = await fetch(`/api/annotations/export/${selectedVideoId}`);
+      const response = await fetch(`/api/annotations/export/${selectedVideo.id}`);
       const data = await response.json();
       
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -107,8 +123,7 @@ export default function AnnotationTool() {
       const a = document.createElement('a');
       a.href = url;
       // Utiliser le nom original de la vidéo pour le fichier d'export
-      const selectedVideo = videos.find(v => v.id === selectedVideoId);
-      const filename = selectedVideo ? selectedVideo.originalName.replace(/\.[^/.]+$/, "") : selectedVideoId;
+      const filename = selectedVideo.originalName.replace(/\.[^/.]+$/, "");
       a.download = `annotations_${filename}.json`;
       document.body.appendChild(a);
       a.click();
@@ -126,7 +141,7 @@ export default function AnnotationTool() {
         variant: "destructive",
       });
     }
-  }, [selectedVideoId, toast, videos]);
+  }, [selectedVideo, toast]);
 
   const handleImportAnnotations = useCallback(async (file: File) => {
     try {
@@ -148,8 +163,6 @@ export default function AnnotationTool() {
       });
     }
   }, [refetchAnnotations, toast]);
-
-  const selectedVideo = videos.find(v => v.id === selectedVideoId);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -182,7 +195,7 @@ export default function AnnotationTool() {
             </label>
             <Button 
               onClick={handleExportAnnotations} 
-              disabled={!selectedVideoId}
+              disabled={!selectedVideo}
               size="sm"
               data-testid="button-export-json"
             >
@@ -195,7 +208,7 @@ export default function AnnotationTool() {
       <div className="flex h-[calc(100vh-80px)]">
         {/* Left Panel - Video Player */}
         <div className="flex-1 bg-background border-r border-border">
-        {selectedVideo && gpsData ? (
+        {selectedVideo && gpsData && !gpsDataError ? (
           <VideoPlayer
             video={selectedVideo}
             gpsData={gpsData}
@@ -206,9 +219,9 @@ export default function AnnotationTool() {
             selectedAnnotationId={selectedAnnotationId}
             onAnnotationSelect={setSelectedAnnotationId}
           />
-        ) : (
-        <FileUpload onVideoUpload={handleVideoUpload} />
-    )}
+        ) :(
+          <FileUpload onVideoUpload={handleVideoUpload} folderId={folderId} />
+        )}
         </div>
 
         {/* Right Panel - Map and Annotations */}

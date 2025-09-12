@@ -3,6 +3,22 @@ import { pgTable, text, varchar, integer, real, timestamp, jsonb } from "drizzle
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+export const projects = pgTable("projects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const folders = pgTable("folders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  projectId: varchar("project_id").references(() => projects.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const videos = pgTable("videos", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   filename: text("filename").notNull(),
@@ -11,6 +27,7 @@ export const videos = pgTable("videos", {
   fps: real("fps"),
   width: integer("width"),
   height: integer("height"),
+  folderId: varchar("folder_id").references(() => folders.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -39,6 +56,18 @@ export const annotations = pgTable("annotations", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const insertProjectSchema = createInsertSchema(projects).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertFolderSchema = createInsertSchema(folders).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertVideoSchema = createInsertSchema(videos).omit({
   id: true,
   createdAt: true,
@@ -55,6 +84,10 @@ export const insertAnnotationSchema = createInsertSchema(annotations).omit({
   updatedAt: true,
 });
 
+export type InsertProject = z.infer<typeof insertProjectSchema>;
+export type Project = typeof projects.$inferSelect;
+export type InsertFolder = z.infer<typeof insertFolderSchema>;
+export type Folder = typeof folders.$inferSelect;
 export type InsertVideo = z.infer<typeof insertVideoSchema>;
 export type Video = typeof videos.$inferSelect;
 export type InsertGpsData = z.infer<typeof insertGpsDataSchema>;

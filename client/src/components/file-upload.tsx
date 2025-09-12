@@ -7,9 +7,10 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface FileUploadProps {
   onVideoUpload: (videoId: string) => void;
+  folderId?: string;
 }
 
-export default function FileUpload({ onVideoUpload }: FileUploadProps) {
+export default function FileUpload({ onVideoUpload, folderId }: FileUploadProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedVideoId, setUploadedVideoId] = useState<string | null>(null);
   const { toast } = useToast();
@@ -51,7 +52,13 @@ export default function FileUpload({ onVideoUpload }: FileUploadProps) {
       formData.append('fps', '30'); // Default FPS, can be detected from video
       formData.append('width', metadata.width.toString());
       formData.append('height', metadata.height.toString());
-      const response = await apiRequest("POST", "/api/videos", formData);
+      
+      // Determine the upload endpoint based on whether we have a folderId
+      const uploadEndpoint = folderId 
+        ? `/api/folders/${folderId}/videos` 
+        : "/api/videos";
+        
+      const response = await apiRequest("POST", uploadEndpoint, formData);
       console.log("Received response:", response);
       const videoData = await response.json();
       
@@ -71,7 +78,7 @@ export default function FileUpload({ onVideoUpload }: FileUploadProps) {
     } finally {
       setIsUploading(false);
     }
-  }, [onVideoUpload, toast]);
+  }, [onVideoUpload, toast, folderId]);
 
   const handleGpsUpload = useCallback(async (file: File) => {
     if (!file || !uploadedVideoId) return;
@@ -85,7 +92,7 @@ export default function FileUpload({ onVideoUpload }: FileUploadProps) {
       await apiRequest("POST", "/api/gps-data", formData);
       
       // Invalider les requêtes pour rafraîchir les données GPS
-      queryClient.invalidateQueries({ queryKey: ["/api/gps-data/video", uploadedVideoId] });
+      queryClient.invalidateQueries({ queryKey: ["video-gps", uploadedVideoId] });
       
       toast({
         title: "GPS data uploaded successfully",

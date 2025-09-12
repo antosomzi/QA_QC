@@ -4,12 +4,16 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import AnnotationTool from "@/pages/annotation-tool";
+import ProjectList from "@/pages/project-list";
+import ProjectDetail from "@/pages/project-detail";
 import NotFound from "@/pages/not-found";
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={AnnotationTool} />
+      <Route path="/" component={ProjectList} />
+      <Route path="/project/:projectId" component={ProjectDetail} />
+      <Route path="/folder/:folderId" component={AnnotationTool} />
       <Route component={NotFound} />
     </Switch>
   );

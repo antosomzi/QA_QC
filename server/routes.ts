@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertVideoSchema, insertGpsDataSchema, insertAnnotationSchema } from "@shared/schema";
+import { insertProjectSchema, insertFolderSchema, insertVideoSchema, insertGpsDataSchema, insertAnnotationSchema } from "@shared/schema";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -26,6 +26,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Debug route - temporary endpoint to see all data in memory
   app.get("/api/debug/memory", async (_req, res) => {
     try {
+      const projects = await storage.getAllProjects();
+      const folders = await storage.getAllFolders();
       const videos = await storage.getAllVideos();
       const allAnnotations = [];
       const allGpsData = [];
@@ -42,6 +44,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       res.json({
+        projects,
+        folders,
         videos,
         annotations: allAnnotations,
         gpsData: allGpsData
@@ -51,11 +55,143 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Project routes
+  app.post("/api/projects", async (req, res) => {
+    try {
+      const validatedData = insertProjectSchema.parse(req.body);
+      const project = await storage.createProject(validatedData);
+      res.json(project);
+    } catch (error) {
+      res.status(400).json({ message: error instanceof Error ? error.message : "Failed to create project" });
+    }
+  });
+
+  app.get("/api/projects", async (req, res) => {
+    try {
+      const projects = await storage.getAllProjects();
+      res.json(projects);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch projects" });
+    }
+  });
+
+  app.get("/api/projects/:id", async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      res.json(project);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch project" });
+    }
+  });
+
+  app.put("/api/projects/:id", async (req, res) => {
+    try {
+      const validatedData = insertProjectSchema.partial().parse(req.body);
+      const project = await storage.updateProject(req.params.id, validatedData);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      res.json(project);
+    } catch (error) {
+      res.status(400).json({ message: error instanceof Error ? error.message : "Failed to update project" });
+    }
+  });
+
+  app.delete("/api/projects/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteProject(req.params.id);
+      if (!success) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete project" });
+    }
+  });
+
+  // Folder routes
+  app.post("/api/projects/:projectId/folders", async (req, res) => {
+    try {
+      // Vérifier que le projet existe
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const validatedData = insertFolderSchema.parse({...req.body, projectId: req.params.projectId});
+      const folder = await storage.createFolder(validatedData);
+      res.json(folder);
+    } catch (error) {
+      res.status(400).json({ message: error instanceof Error ? error.message : "Failed to create folder" });
+    }
+  });
+
+  app.get("/api/projects/:projectId/folders", async (req, res) => {
+    try {
+      const folders = await storage.getFoldersByProjectId(req.params.projectId);
+      res.json(folders);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch folders" });
+    }
+  });
+
+  app.get("/api/folders/:id", async (req, res) => {
+    try {
+      const folder = await storage.getFolder(req.params.id);
+      if (!folder) {
+        return res.status(404).json({ message: "Folder not found" });
+      }
+      res.json(folder);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch folder" });
+    }
+  });
+
+  app.put("/api/folders/:id", async (req, res) => {
+    try {
+      const validatedData = insertFolderSchema.partial().parse(req.body);
+      const folder = await storage.updateFolder(req.params.id, validatedData);
+      if (!folder) {
+        return res.status(404).json({ message: "Folder not found" });
+      }
+      res.json(folder);
+    } catch (error) {
+      res.status(400).json({ message: error instanceof Error ? error.message : "Failed to update folder" });
+    }
+  });
+
+  app.delete("/api/folders/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteFolder(req.params.id);
+      if (!success) {
+        return res.status(404).json({ message: "Folder not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete folder" });
+    }
+  });
+
   // Video routes
-  app.post("/api/videos", upload.single('video'), async (req, res) => {
+  app.post("/api/folders/:folderId/videos", upload.single('video'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No video file provided" });
+      }
+
+      // Vérifier que le dossier existe
+      const folder = await storage.getFolder(req.params.folderId);
+      if (!folder) {
+        return res.status(404).json({ message: "Folder not found" });
+      }
+
+      // Vérifier que le dossier n'a pas déjà une vidéo
+      const existingVideos = await storage.getVideosByFolderId(req.params.folderId);
+      if (existingVideos.length > 0) {
+        return res.status(400).json({ message: "Folder already contains a video. Each folder can only contain one video." });
       }
 
       const videoData = {
@@ -65,6 +201,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fps: req.body.fps ? parseFloat(req.body.fps) : undefined,
         width: req.body.width ? parseInt(req.body.width) : undefined,
         height: req.body.height ? parseInt(req.body.height) : undefined,
+        folderId: req.params.folderId,
       };
 
       const validatedData = insertVideoSchema.parse(videoData);
@@ -72,13 +209,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json(video);
     } catch (error) {
+      if (error instanceof Error && error.message.includes("already contains a video")) {
+        return res.status(400).json({ message: error.message });
+      }
       res.status(400).json({ message: error instanceof Error ? error.message : "Failed to upload video" });
     }
   });
 
-  app.get("/api/videos", async (req, res) => {
+  app.get("/api/folders/:folderId/videos", async (req, res) => {
     try {
-      const videos = await storage.getAllVideos();
+      // Vérifier que le dossier existe
+      const folder = await storage.getFolder(req.params.folderId);
+      if (!folder) {
+        return res.status(404).json({ message: "Folder not found" });
+      }
+      
+      const videos = await storage.getVideosByFolderId(req.params.folderId);
       res.json(videos);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch videos" });
