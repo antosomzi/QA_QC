@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import { initializeStorage } from "./storage";
 import { insertProjectSchema, insertFolderSchema, insertVideoSchema, insertGpsDataSchema, insertAnnotationSchema } from "@shared/schema";
 import multer from "multer";
 import path from "path";
@@ -22,8 +22,10 @@ const upload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Initialize storage based on environment
+  const storage = await initializeStorage();
   
-  // Debug route - temporary endpoint to see all data in memory
+  // Debug route - temporary endpoint to see all data in storage
   app.get("/api/debug/memory", async (_req, res) => {
     try {
       const projects = await storage.getAllProjects();

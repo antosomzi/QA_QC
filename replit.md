@@ -21,14 +21,14 @@ Preferred communication style: Simple, everyday language.
 ### Backend Architecture
 - **Framework**: Express.js with TypeScript for RESTful API endpoints
 - **File Upload**: Multer middleware for handling video and GPS file uploads with 500MB file size limits
-- **Storage**: In-memory storage implementation with interface for future database integration
+- **Storage**: PostgreSQL database storage implementation using Drizzle ORM
 - **Development**: Vite integration for hot module replacement and development server proxying
 
 ### Data Storage Solutions
 - **Database ORM**: Drizzle ORM configured for PostgreSQL with schema-first approach
 - **Schema Design**: Three main entities - videos, GPS data, and annotations with proper foreign key relationships
 - **Migration System**: Drizzle Kit for database schema migrations and version control
-- **Current Storage**: In-memory implementation for development, ready for PostgreSQL production deployment
+- **Current Storage**: PostgreSQL implementation for production deployment
 
 ### File Management
 - **Video Storage**: Local filesystem storage in uploads directory with unique filename generation
