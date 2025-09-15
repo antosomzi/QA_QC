@@ -83,8 +83,10 @@ export default function MapPanel({
         marker.bindPopup(`
           <div>
             <strong>${annotation.label}</strong><br>
-            Frame: ${annotation.frameIndex}<br>
-            Time: ${Math.floor(annotation.frameTimestampMs / 1000 / 60)}:${Math.floor((annotation.frameTimestampMs / 1000) % 60).toString().padStart(2, '0')}
+            ${annotation.frameIndex !== undefined && annotation.frameIndex !== null ? `Frame: ${annotation.frameIndex}<br>` : ''}
+            ${annotation.frameTimestampMs !== undefined && annotation.frameTimestampMs !== null ? 
+              `Time: ${Math.floor(annotation.frameTimestampMs / 1000 / 60)}:${Math.floor((annotation.frameTimestampMs / 1000) % 60).toString().padStart(2, '0')}<br>` : 
+              ''}
           </div>
         `);
         

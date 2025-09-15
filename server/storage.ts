@@ -42,12 +42,13 @@ export interface IStorage {
   createAnnotation(annotation: InsertAnnotation): Promise<Annotation>;
   getAnnotation(id: string): Promise<Annotation | undefined>;
   getAnnotationsByVideoId(videoId: string): Promise<Annotation[]>;
+  getAnnotationsByFolderId(folderId: string): Promise<Annotation[]>;
   updateAnnotation(id: string, annotation: Partial<InsertAnnotation>): Promise<Annotation | undefined>;
   deleteAnnotation(id: string): Promise<boolean>;
   
   // Export/Import methods
-  exportAnnotations(videoId: string): Promise<AnnotationExport | undefined>;
-  importAnnotations(data: AnnotationExport): Promise<void>;
+  exportAnnotationsByFolder(folderId: string): Promise<AnnotationExport | undefined>;
+  importAnnotationsByFolder(folderId: string, data: any): Promise<void>;
 }
 
 // Directly export the PostgreSQL storage instance

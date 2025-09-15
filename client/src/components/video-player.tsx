@@ -20,6 +20,7 @@ interface VideoPlayerProps {
   onAnnotationCreate: (annotation: Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>) => void;
   selectedAnnotationId?: string | null;
   onAnnotationSelect: (id: string | null) => void;
+  folderId: string;
 }
 
 export default function VideoPlayer({
@@ -31,6 +32,7 @@ export default function VideoPlayer({
   onAnnotationCreate,
   selectedAnnotationId,
   onAnnotationSelect,
+  folderId,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -169,6 +171,7 @@ export default function VideoPlayer({
 
     // Create annotation
     const annotation = {
+      folderId: folderId,
       videoId: video.id,
       frameIndex: currentFrame,
       frameTimestampMs: Math.floor(currentTime * 1000),

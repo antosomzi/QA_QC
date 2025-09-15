@@ -30,13 +30,13 @@ export interface MapMarker {
   lat: number;
   lng: number;
   label: string;
-  frameIndex: number;
+  frameIndex?: number;
   isSelected: boolean;
 }
 
 export interface AnnotationFormData {
   label: string;
-  frameIndex: number;
+  frameIndex?: number;
   gpsLat: number;
   gpsLon: number;
   bboxX: number;

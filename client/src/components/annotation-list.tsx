@@ -22,17 +22,23 @@ interface EditModalProps {
 
 function EditAnnotationModal({ annotation, onSave, onClose }: EditModalProps) {
   const [label, setLabel] = useState(annotation.label);
-  const [frameIndex, setFrameIndex] = useState(annotation.frameIndex);
+  const [frameIndex, setFrameIndex] = useState(annotation.frameIndex ?? null);
   const [gpsLat, setGpsLat] = useState(annotation.gpsLat);
   const [gpsLon, setGpsLon] = useState(annotation.gpsLon);
 
   const handleSave = () => {
-    onSave({
+    const updates: Partial<Annotation> = {
       label,
-      frameIndex,
       gpsLat,
       gpsLon,
-    });
+    };
+    
+    // Only include frameIndex if it's not null
+    if (frameIndex !== null) {
+      updates.frameIndex = frameIndex;
+    }
+    
+    onSave(updates);
     onClose();
   };
 
@@ -66,8 +72,8 @@ function EditAnnotationModal({ annotation, onSave, onClose }: EditModalProps) {
             <Input
               id="frame"
               type="number"
-              value={frameIndex}
-              onChange={(e) => setFrameIndex(parseInt(e.target.value))}
+              value={frameIndex ?? ''}
+              onChange={(e) => setFrameIndex(e.target.value ? parseInt(e.target.value) : null)}
               data-testid="input-frame-index"
             />
           </div>
@@ -130,7 +136,11 @@ export default function AnnotationList({
 }: AnnotationListProps) {
   const [editingAnnotation, setEditingAnnotation] = useState<Annotation | null>(null);
 
-  const formatTimestamp = (timestampMs: number) => {
+  const formatTimestamp = (timestampMs: number | null | undefined) => {
+    if (timestampMs === null || timestampMs === undefined) {
+      return 'No timestamp';
+    }
+    
     const totalSeconds = Math.floor(timestampMs / 1000);
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
@@ -188,9 +198,13 @@ export default function AnnotationList({
                       {annotation.label}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Frame <span data-testid={`text-annotation-frame-${annotation.id}`}>{annotation.frameIndex}</span> • 
+                      {annotation.frameIndex !== undefined && annotation.frameIndex !== null ? (
+                        <>Frame <span data-testid={`text-annotation-frame-${annotation.id}`}>{annotation.frameIndex}</span> • </>
+                      ) : null}
                       <span className="ml-1" data-testid={`text-annotation-time-${annotation.id}`}>
-                        {formatTimestamp(annotation.frameTimestampMs)}
+                        {annotation.frameTimestampMs !== undefined && annotation.frameTimestampMs !== null ? 
+                          formatTimestamp(annotation.frameTimestampMs) : 
+                          'No timestamp'}
                       </span>
                     </p>
                   </div>

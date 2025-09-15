@@ -42,11 +42,12 @@ export const gpsData = pgTable("gps_data", {
 
 export const annotations = pgTable("annotations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  videoId: varchar("video_id").references(() => videos.id),
-  frameIndex: integer("frame_index").notNull(),
-  frameTimestampMs: integer("frame_timestamp_ms").notNull(),
-  gpsLat: real("gps_lat").notNull(),
-  gpsLon: real("gps_lon").notNull(),
+  folderId: varchar("folder_id").references(() => folders.id).notNull(), // Required folder reference
+  videoId: varchar("video_id").references(() => videos.id), // Optional video reference
+  frameIndex: integer("frame_index"), // Optional - only for video-based annotations
+  frameTimestampMs: integer("frame_timestamp_ms"), // Optional - only for video-based annotations
+  gpsLat: real("gps_lat").notNull(), // Required - GPS coordinates for map display
+  gpsLon: real("gps_lon").notNull(), // Required - GPS coordinates for map display
   bboxX: integer("bbox_x").notNull(),
   bboxY: integer("bbox_y").notNull(),
   bboxWidth: integer("bbox_width").notNull(),
@@ -82,6 +83,10 @@ export const insertAnnotationSchema = createInsertSchema(annotations).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).partial({
+  videoId: true,
+  frameIndex: true,
+  frameTimestampMs: true,
 });
 
 export type InsertProject = z.infer<typeof insertProjectSchema>;
@@ -110,17 +115,19 @@ export type BoundingBox = {
   height: number;
 };
 
+export type VideoInfo = {
+  video_id: string;
+  original_name: string;
+  fps: number;
+  duration_ms: number;
+};
+
 export type AnnotationExport = {
-  video: {
-    video_id: string;
-    original_name: string;
-    fps: number;
-    duration_ms: number;
-  };
+  video?: VideoInfo;
   annotations: Array<{
     id: string;
-    frame_index: number;
-    frame_timestamp_ms: number;
+    frame_index?: number;
+    frame_timestamp_ms?: number;
     gps: { lat: number; lon: number };
     bbox: {
       x: number;

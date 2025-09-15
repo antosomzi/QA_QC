@@ -341,9 +341,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/annotations/video/:videoId", async (req, res) => {
+  app.get("/api/annotations/folder/:folderId", async (req, res) => {
     try {
-      const annotations = await storage.getAnnotationsByVideoId(req.params.videoId);
+      const annotations = await storage.getAnnotationsByFolderId(req.params.folderId);
       res.json(annotations);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch annotations" });
@@ -376,16 +376,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Export/Import routes
-  app.get("/api/annotations/export/:videoId", async (req, res) => {
+  app.get("/api/annotations/export/folder/:folderId", async (req, res) => {
     try {
-      const exportData = await storage.exportAnnotations(req.params.videoId);
+      const exportData = await storage.exportAnnotationsByFolder(req.params.folderId);
       if (!exportData) {
-        return res.status(404).json({ message: "Video not found" });
+        return res.status(404).json({ message: "Folder not found" });
       }
       
-      // Utiliser le nom original de la vidéo pour le nom du fichier
-      const video = await storage.getVideo(req.params.videoId);
-      const filename = video ? video.originalName.replace(/\.[^/.]+$/, "") : req.params.videoId;
+      // Utiliser le nom du dossier pour le nom du fichier
+      const folder = await storage.getFolder(req.params.folderId);
+      const filename = folder ? folder.name.replace(/\s+/g, '_') : req.params.folderId;
       
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Disposition', `attachment; filename="annotations_${filename}.json"`);
@@ -395,9 +395,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/annotations/import", async (req, res) => {
+  app.post("/api/annotations/import/folder/:folderId", async (req, res) => {
     try {
-      await storage.importAnnotations(req.body);
+      await storage.importAnnotationsByFolder(req.params.folderId, req.body);
       res.json({ success: true, message: "Annotations imported successfully" });
     } catch (error) {
       res.status(400).json({ message: error instanceof Error ? error.message : "Failed to import annotations" });

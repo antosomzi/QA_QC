@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import VideoPlayer from "@/components/video-player";
@@ -27,7 +27,7 @@ export default function AnnotationTool() {
   const selectedVideo = videos.length > 0 ? videos[0] : null;
 
   // Fetch GPS data for selected video
-  const { data: gpsData, error: gpsDataError } = useQuery<GpsData>({
+  const { data: gpsData, error: gpsDataError } = useQuery<GpsData | null>({
     queryKey: ["video-gps", selectedVideo?.id],
     queryFn: async () => {
       if (!selectedVideo) return null;
@@ -42,11 +42,10 @@ export default function AnnotationTool() {
     enabled: !!selectedVideo,
   });
 
-  // Fetch annotations for selected video
+  // Fetch annotations for selected folder
   const { data: annotations = [], refetch: refetchAnnotations } = useQuery<Annotation[]>({
-    queryKey: ["video-annotations", selectedVideo?.id],
-    queryFn: () => selectedVideo ? fetch(`/api/annotations/video/${selectedVideo.id}`).then(res => res.json()) : [],
-    enabled: !!selectedVideo,
+    queryKey: ["folder-annotations", folderId],
+    queryFn: () => fetch(`/api/annotations/folder/${folderId}`).then(res => res.json()),
   });
 
   const handleVideoUpload = useCallback((videoId: string) => {
@@ -59,14 +58,18 @@ export default function AnnotationTool() {
   }, [toast, refetchVideos]);
 
   const handleAnnotationCreate = useCallback(async (annotation: Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>) => {
-    if (!selectedVideo) return;
-
     try {
-      await apiRequest("POST", "/api/annotations", annotation);
+      // Always include folderId when creating annotations
+      const annotationWithFolder = {
+        ...annotation,
+        folderId: folderId
+      };
+      
+      await apiRequest("POST", "/api/annotations", annotationWithFolder);
       refetchAnnotations();
       toast({
         title: "Annotation created",
-        description: "New annotation has been added to the video.",
+        description: "New annotation has been added to the folder.",
       });
     } catch (error) {
       toast({
@@ -75,7 +78,7 @@ export default function AnnotationTool() {
         variant: "destructive",
       });
     }
-  }, [selectedVideo, refetchAnnotations, toast]);
+  }, [folderId, refetchAnnotations, toast]);
 
   const handleAnnotationUpdate = useCallback(async (id: string, updates: Partial<Annotation>) => {
     try {
@@ -112,18 +115,18 @@ export default function AnnotationTool() {
   }, [refetchAnnotations, toast]);
 
   const handleExportAnnotations = useCallback(async () => {
-    if (!selectedVideo) return;
-
     try {
-      const response = await fetch(`/api/annotations/export/${selectedVideo.id}`);
+      const response = await fetch(`/api/annotations/export/folder/${folderId}`);
       const data = await response.json();
       
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      // Utiliser le nom original de la vidéo pour le fichier d'export
-      const filename = selectedVideo.originalName.replace(/\.[^/.]+$/, "");
+      // Utiliser le nom du dossier pour le fichier d'export
+      const folderResponse = await fetch(`/api/folders/${folderId}`);
+      const folder = await folderResponse.json();
+      const filename = folder.name.replace(/\s+/g, '_');
       a.download = `annotations_${filename}.json`;
       document.body.appendChild(a);
       a.click();
@@ -141,14 +144,14 @@ export default function AnnotationTool() {
         variant: "destructive",
       });
     }
-  }, [selectedVideo, toast]);
+  }, [folderId, toast]);
 
   const handleImportAnnotations = useCallback(async (file: File) => {
     try {
       const text = await file.text();
-      const data: AnnotationExport = JSON.parse(text);
+      const data = JSON.parse(text);
       
-      await apiRequest("POST", "/api/annotations/import", data);
+      await apiRequest("POST", `/api/annotations/import/folder/${folderId}`, data);
       refetchAnnotations();
       
       toast({
@@ -162,7 +165,7 @@ export default function AnnotationTool() {
         variant: "destructive",
       });
     }
-  }, [refetchAnnotations, toast]);
+  }, [folderId, refetchAnnotations, toast]);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -194,8 +197,7 @@ export default function AnnotationTool() {
               </Button>
             </label>
             <Button 
-              onClick={handleExportAnnotations} 
-              disabled={!selectedVideo}
+              onClick={handleExportAnnotations}
               size="sm"
               data-testid="button-export-json"
             >
@@ -218,6 +220,7 @@ export default function AnnotationTool() {
             onAnnotationCreate={handleAnnotationCreate}
             selectedAnnotationId={selectedAnnotationId}
             onAnnotationSelect={setSelectedAnnotationId}
+            folderId={folderId}
           />
         ) :(
           <FileUpload onVideoUpload={handleVideoUpload} folderId={folderId} />

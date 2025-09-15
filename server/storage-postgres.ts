@@ -131,6 +131,14 @@ export class PostgresStorage implements IStorage {
 
   // Annotation methods
   async createAnnotation(insertAnnotation: InsertAnnotation): Promise<Annotation> {
+    // If folderId is not provided but videoId is, get folderId from the video
+    if (!insertAnnotation.folderId && insertAnnotation.videoId) {
+      const [video] = await this.db.select().from(videos).where(eq(videos.id, insertAnnotation.videoId)).limit(1);
+      if (video) {
+        insertAnnotation.folderId = video.folderId;
+      }
+    }
+    
     const [annotation] = await this.db.insert(annotations).values(insertAnnotation).returning();
     return annotation;
   }
@@ -144,6 +152,10 @@ export class PostgresStorage implements IStorage {
     return await this.db.select().from(annotations).where(eq(annotations.videoId, videoId));
   }
 
+  async getAnnotationsByFolderId(folderId: string): Promise<Annotation[]> {
+    return await this.db.select().from(annotations).where(eq(annotations.folderId, folderId));
+  }
+
   async updateAnnotation(id: string, updates: Partial<InsertAnnotation>): Promise<Annotation | undefined> {
     const [annotation] = await this.db.update(annotations).set(updates).where(eq(annotations.id, id)).returning();
     return annotation;
@@ -154,23 +166,37 @@ export class PostgresStorage implements IStorage {
     return result.length > 0;
   }
 
-  async exportAnnotations(videoId: string): Promise<AnnotationExport | undefined> {
-    const [video] = await this.db.select().from(videos).where(eq(videos.id, videoId)).limit(1);
-    if (!video) return undefined;
+  async exportAnnotationsByFolder(folderId: string): Promise<AnnotationExport | undefined> {
+    const [folder] = await this.db.select().from(folders).where(eq(folders.id, folderId)).limit(1);
+    if (!folder) return undefined;
 
-    const annotationsList = await this.getAnnotationsByVideoId(videoId);
+    const annotationsList = await this.getAnnotationsByFolderId(folderId);
+    
+    // Check if any annotations are linked to a video
+    const videoAnnotations = annotationsList.filter(ann => ann.videoId);
+    let videoInfo = undefined;
+    
+    if (videoAnnotations.length > 0) {
+      const videoId = videoAnnotations[0].videoId;
+      if (videoId) {
+        const [video] = await this.db.select().from(videos).where(eq(videos.id, videoId)).limit(1);
+        if (video) {
+          videoInfo = {
+            video_id: video.id,
+            original_name: video.originalName,
+            fps: video.fps || 30,
+            duration_ms: (video.duration || 0) * 1000
+          };
+        }
+      }
+    }
     
     return {
-      video: {
-        video_id: video.id,
-        original_name: video.originalName,
-        fps: video.fps || 30,
-        duration_ms: (video.duration || 0) * 1000
-      },
+      video: videoInfo,
       annotations: annotationsList.map(ann => ({
         id: ann.id,
-        frame_index: ann.frameIndex,
-        frame_timestamp_ms: ann.frameTimestampMs,
+        frame_index: ann.frameIndex !== null ? ann.frameIndex : undefined,
+        frame_timestamp_ms: ann.frameTimestampMs !== null ? ann.frameTimestampMs : undefined,
         gps: { lat: ann.gpsLat, lon: ann.gpsLon },
         bbox: {
           x: ann.bboxX,
@@ -186,18 +212,14 @@ export class PostgresStorage implements IStorage {
     };
   }
 
-  async importAnnotations(data: AnnotationExport): Promise<void> {
-    // Find the video by its original name
-    const [video] = await this.db.select().from(videos).where(eq(videos.originalName, data.video.original_name)).limit(1);
+  async importAnnotationsByFolder(folderId: string, data: any): Promise<void> {
+    // Import annotations using the folder ID
+    // Only look at the annotations array, ignore video/folder attributes
+    const annotationsToImport = data.annotations || (Array.isArray(data) ? data : []);
     
-    if (!video) {
-      throw new Error(`Video with original name '${data.video.original_name}' not found`);
-    }
-    
-    // Import annotations using the found video ID
-    for (const annData of data.annotations) {
+    for (const annData of annotationsToImport) {
       const annotation: InsertAnnotation = {
-        videoId: video.id,
+        folderId: folderId,
         frameIndex: annData.frame_index,
         frameTimestampMs: annData.frame_timestamp_ms,
         gpsLat: annData.gps.lat,
