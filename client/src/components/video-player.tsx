@@ -203,20 +203,20 @@ export default function VideoPlayer({
     annotations
       .filter(ann => ann.frameIndex === currentFrame)
       .forEach(ann => {
-        ctx.strokeStyle = ann.id === selectedAnnotationId ? '#60A5FA' : '#3B82F6';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = ann.id === selectedAnnotationId ? '#FF6B6B' : '#E53E3E';
+        ctx.lineWidth = 5;
         ctx.strokeRect(ann.bboxX, ann.bboxY, ann.bboxWidth, ann.bboxHeight);
         
         // Draw label
-        ctx.fillStyle = ann.id === selectedAnnotationId ? '#60A5FA' : '#3B82F6';
+        ctx.fillStyle = ann.id === selectedAnnotationId ? '#FF6B6B' : '#E53E3E';
         ctx.font = '14px Inter';
         ctx.fillText(ann.label, ann.bboxX, ann.bboxY - 5);
       });
     
     // Draw current bounding box being drawn
     if (currentBBox) {
-      ctx.strokeStyle = '#3B82F6';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#FF6B6B';
+      ctx.lineWidth = 5;
       ctx.setLineDash([5, 5]);
       ctx.strokeRect(currentBBox.x, currentBBox.y, currentBBox.width, currentBBox.height);
       ctx.setLineDash([]);
@@ -297,7 +297,24 @@ export default function VideoPlayer({
             <span className="text-sm text-muted-foreground" data-testid="text-current-time">
               {formatTime(currentTime)}
             </span>
-            <div className="flex-1 h-2 bg-muted rounded-full relative cursor-pointer">
+            <div 
+              className="flex-1 h-2 bg-muted rounded-full relative cursor-pointer"
+              onClick={(e) => {
+                if (!videoRef.current || !duration) return;
+                
+                const rect = e.currentTarget.getBoundingClientRect();
+                const pos = (e.clientX - rect.left) / rect.width;
+                const targetTime = pos * duration;
+                
+                // Use the existing navigateToFrame function for precise frame seeking
+                if (video.fps) {
+                  const targetFrame = Math.floor(targetTime * video.fps);
+                  navigateToFrame(targetFrame);
+                } else {
+                  throw new Error("Video FPS is not defined");
+                }
+              }}
+            >
               <div 
                 className="absolute top-0 left-0 h-full bg-primary rounded-full" 
                 style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}
