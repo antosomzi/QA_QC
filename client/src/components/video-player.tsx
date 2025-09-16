@@ -45,24 +45,6 @@ export default function VideoPlayer({
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [currentBBox, setCurrentBBox] = useState<BoundingBox | null>(null);
   const [isManualNavigation, setIsManualNavigation] = useState(false);
-  const [pendingFrameUpdate, setPendingFrameUpdate] = useState<number | null>(null);
-
-  // Update video time when frame changes (seulement pendant la navigation manuelle)
-  useEffect(() => {
-    if (videoRef.current && video.fps && isManualNavigation && pendingFrameUpdate !== null) {
-      const timeInSeconds = pendingFrameUpdate / video.fps;
-      videoRef.current.currentTime = timeInSeconds;
-      setCurrentTime(timeInSeconds);
-    }
-  }, [pendingFrameUpdate, video.fps, isManualNavigation]);
-
-  // Update parent frame state when pending update is set
-  useEffect(() => {
-    if (pendingFrameUpdate !== null) {
-      onFrameChange(pendingFrameUpdate);
-      setPendingFrameUpdate(null);
-    }
-  }, [pendingFrameUpdate, onFrameChange]);
 
   // Handle video time updates - source de vérité unique
   const handleTimeUpdate = useCallback(() => {
@@ -71,7 +53,9 @@ export default function VideoPlayer({
     
     if (videoRef.current && video.fps) {
       const time = videoRef.current.currentTime;
-      const frame = Math.floor(time * video.fps);
+      // Utiliser Math.round au lieu de Math.floor pour une meilleure synchronisation
+      // avec la frame réellement affichée
+      const frame = Math.round(time * video.fps);
       setCurrentTime(time);
       // Ne mettre à jour la frame que si elle a vraiment changé
       if (frame !== currentFrame) {
@@ -99,27 +83,40 @@ export default function VideoPlayer({
     }
   }, [isPlaying]);
 
-  // Frame navigation
+  // Fonction helper pour la navigation frame par frame avec correction du décalage
+  const navigateToFrame = useCallback((targetFrame: number) => {
+    if (!video.fps || !videoRef.current) return;
+    
+    setIsManualNavigation(true);
+    // Calculer le temps exact pour la frame cible
+    // Ajouter 0.5 / fps pour se positionner au milieu de la frame
+    // Cela garantit que Math.round donnera la bonne frame
+    const targetTime = (targetFrame + 0.5) / video.fps;
+    
+    // Effectuer le seek
+    videoRef.current.currentTime = targetTime;
+    setCurrentTime(targetTime);
+    onFrameChange(targetFrame);
+    
+    // Réactiver la mise à jour automatique après un court délai
+    setTimeout(() => setIsManualNavigation(false), 100);
+  }, [video.fps, onFrameChange]);
+
+  // Frame navigation avec correction du bug
   const goToPreviousFrame = useCallback(() => {
     if (video.fps && currentFrame > 0) {
-      setIsManualNavigation(true);
-      setPendingFrameUpdate(currentFrame - 1);
-      // Réactiver la mise à jour automatique après un court délai
-      setTimeout(() => setIsManualNavigation(false), 100);
+      navigateToFrame(currentFrame - 1);
     }
-  }, [currentFrame, video.fps]);
+  }, [currentFrame, video.fps, navigateToFrame]);
 
   const goToNextFrame = useCallback(() => {
     if (video.fps && duration) {
       const totalFrames = Math.floor(duration * video.fps);
       if (currentFrame < totalFrames - 1) {
-        setIsManualNavigation(true);
-        setPendingFrameUpdate(currentFrame + 1);
-        // Réactiver la mise à jour automatique après un court délai
-        setTimeout(() => setIsManualNavigation(false), 100);
+        navigateToFrame(currentFrame + 1);
       }
     }
-  }, [currentFrame, video.fps, duration]);
+  }, [currentFrame, video.fps, duration, navigateToFrame]);
 
   // Canvas drawing functions
   const getCanvasCoordinates = useCallback((e: React.MouseEvent) => {
@@ -189,7 +186,7 @@ export default function VideoPlayer({
     setIsDrawing(false);
     setDrawStart(null);
     setCurrentBBox(null);
-  }, [isDrawing, currentBBox, gpsData, video, currentFrame, currentTime, onAnnotationCreate]);
+  }, [isDrawing, currentBBox, gpsData, video, currentFrame, currentTime, onAnnotationCreate, folderId]);
 
   // Draw annotations on canvas
   useEffect(() => {
@@ -329,6 +326,7 @@ export default function VideoPlayer({
                 onClick={goToPreviousFrame} 
                 size="sm" 
                 variant="secondary"
+                disabled={currentFrame <= 0}
                 data-testid="button-previous-frame"
               >
                 <SkipBack className="w-4 h-4 mr-1" />
@@ -338,6 +336,7 @@ export default function VideoPlayer({
                 onClick={goToNextFrame} 
                 size="sm" 
                 variant="secondary"
+                disabled={currentFrame >= totalFrames - 1}
                 data-testid="button-next-frame"
               >
                 Frame
