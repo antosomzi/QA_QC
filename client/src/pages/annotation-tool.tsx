@@ -277,6 +277,7 @@ export default function AnnotationTool() {
                 currentFrame={currentFrame}
                 onFrameChange={setCurrentFrame}
                 onAnnotationCreate={handleAnnotationCreate}
+                onAnnotationUpdate={handleAnnotationUpdate}
                 selectedAnnotationId={selectedAnnotationId}
                 onAnnotationSelect={setSelectedAnnotationId}
                 folderId={folderId}
