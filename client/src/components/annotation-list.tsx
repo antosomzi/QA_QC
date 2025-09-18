@@ -174,7 +174,7 @@ export default function AnnotationList({
         </div>
       </div>
       
-      <div className="space-y-2 max-h-56 overflow-y-auto">
+      <div className="space-y-2 overflow-y-auto max-h-56">
         {annotations.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <p>No annotations yet</p>

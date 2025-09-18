@@ -1,11 +1,12 @@
 import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
+import { Link } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Folder, Play } from "lucide-react";
+import { ArrowLeft, Trash2, Play } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Project, Folder as FolderType } from "@/types/project";
 
@@ -18,6 +19,27 @@ export default function ProjectDetail() {
   const { data: folders = [], refetch } = useQuery<FolderType[]>({
     queryKey: [`/api/projects/${projectId}/folders`],
   });
+  
+  // Fetch annotation counts for each folder
+  const { data: annotationCounts = {} } = useQuery<Record<string, number>>({
+    queryKey: ["annotation-counts", projectId],
+    queryFn: async () => {
+      const counts: Record<string, number> = {};
+      for (const folder of folders) {
+        try {
+          const response = await fetch(`/api/annotations/folder/${folder.id}`);
+          const annotations = await response.json();
+          counts[folder.id] = annotations.length;
+        } catch (error) {
+          console.error(`Failed to fetch annotations for folder ${folder.id}:`, error);
+          counts[folder.id] = 0;
+        }
+      }
+      return counts;
+    },
+    enabled: folders.length > 0,
+  });
+  
   const [newFolderName, setNewFolderName] = useState("");
   const { toast } = useToast();
 
@@ -44,6 +66,27 @@ export default function ProjectDetail() {
     }
   }, [newFolderName, projectId, refetch, toast]);
 
+  const handleDeleteFolder = useCallback(async (folderId: string, folderName: string) => {
+    if (!confirm(`Are you sure you want to delete the folder "${folderName}"? This will permanently delete the folder and all its data.`)) {
+      return;
+    }
+
+    try {
+      await apiRequest("DELETE", `/api/folders/${folderId}`);
+      refetch();
+      toast({
+        title: "Folder deleted",
+        description: "Folder has been deleted successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete folder.",
+        variant: "destructive",
+      });
+    }
+  }, [refetch, toast]);
+
   if (!project) {
     return <div>Loading...</div>;
   }
@@ -52,28 +95,57 @@ export default function ProjectDetail() {
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-6xl mx-auto">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold">{project.name}</h1>
-          <div className="flex gap-2">
-            <Input
-              value={newFolderName}
-              onChange={(e) => setNewFolderName(e.target.value)}
-              placeholder="Folder name"
-              className="w-64"
-            />
-            <Button onClick={handleCreateFolder} disabled={!newFolderName.trim()}>
-              <Plus className="w-4 h-4 mr-2" />
-              Create Folder
-            </Button>
+          <div className="flex items-center space-x-4">
+            <Link to="/">
+              <Button variant="outline" size="sm">
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back to Projects
+              </Button>
+            </Link>
+            <h1 className="text-3xl font-bold">{project.name}</h1>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* Create new folder card */}
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardHeader>
+              <CardTitle>Create New Folder</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <Input
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  placeholder="Folder name"
+                />
+                <Button 
+                  onClick={handleCreateFolder} 
+                  disabled={!newFolderName.trim()}
+                  className="w-full"
+                >
+                  Create Folder
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+        
+        {/* Folders list - on a new line */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
           {folders.map((folder) => (
             <Card key={folder.id} className="hover:shadow-lg transition-shadow">
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
                   <span>{folder.name}</span>
-                  <Folder className="w-5 h-5 text-muted-foreground" />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => handleDeleteFolder(folder.id, folder.name)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -81,12 +153,17 @@ export default function ProjectDetail() {
                   <span className="text-sm text-muted-foreground">
                     Created: {new Date(folder.createdAt).toLocaleDateString()}
                   </span>
-                  <a href={`/folder/${folder.id}`}>
-                    <Button variant="outline" size="sm">
-                      <Play className="w-4 h-4 mr-2" />
-                      Open
-                    </Button>
-                  </a>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-muted-foreground">
+                      {annotationCounts[folder.id] || 0} annotations
+                    </span>
+                    <a href={`/folder/${folder.id}`}>
+                      <Button variant="outline" size="sm">
+                        <Play className="w-4 h-4 mr-2" />
+                        Open
+                      </Button>
+                    </a>
+                  </div>
                 </div>
               </CardContent>
             </Card>

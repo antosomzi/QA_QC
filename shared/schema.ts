@@ -14,7 +14,7 @@ export const projects = pgTable("projects", {
 export const folders = pgTable("folders", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
-  projectId: varchar("project_id").references(() => projects.id),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -27,13 +27,13 @@ export const videos = pgTable("videos", {
   fps: real("fps"),
   width: integer("width"),
   height: integer("height"),
-  folderId: varchar("folder_id").references(() => folders.id),
+  folderId: varchar("folder_id").references(() => folders.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const gpsData = pgTable("gps_data", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  videoId: varchar("video_id").references(() => videos.id),
+  videoId: varchar("video_id").references(() => videos.id, { onDelete: "cascade" }),
   filename: text("filename").notNull(),
   originalName: text("original_name").notNull(),
   data: jsonb("data").notNull(), // Array of GPS points with timestamps
@@ -42,8 +42,8 @@ export const gpsData = pgTable("gps_data", {
 
 export const annotations = pgTable("annotations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  folderId: varchar("folder_id").references(() => folders.id).notNull(), // Required folder reference
-  videoId: varchar("video_id").references(() => videos.id), // Optional video reference
+  folderId: varchar("folder_id").references(() => folders.id, { onDelete: "cascade" }).notNull(), // Required folder reference
+  videoId: varchar("video_id").references(() => videos.id, { onDelete: "cascade" }), // Optional video reference
   frameIndex: integer("frame_index"), // Optional - only for video-based annotations
   frameTimestampMs: integer("frame_timestamp_ms"), // Optional - only for video-based annotations
   gpsLat: real("gps_lat").notNull(), // Required - GPS coordinates for map display

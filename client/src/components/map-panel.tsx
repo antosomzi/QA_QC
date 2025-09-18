@@ -36,7 +36,7 @@ export default function MapPanel({
         return;
       }
 
-      const map = window.L.map(mapContainerRef.current).setView([34.8628, -85.5027], 13);
+      const map = window.L.map(mapContainerRef.current).setView([34.8628, -85.5027], 10);
       
       window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors'
@@ -127,23 +127,37 @@ export default function MapPanel({
       marker.setIcon(icon);
     });
 
-    // Fit map to show all markers if there are any
-    if (annotations.length > 0) {
+    // Set initial view only when map is first loaded and there are annotations
+    // Don't automatically fit bounds on subsequent updates to prevent zoom jumps
+    if (annotations.length > 0 && !map.hasInitialViewSet) {
       const group = new window.L.featureGroup(Array.from(markers.values()));
       map.fitBounds(group.getBounds().pad(0.1));
+      map.hasInitialViewSet = true;
     }
   }, [annotations, selectedAnnotationId, onAnnotationSelect, onMarkerMove]);
 
   // Focus on selected annotation
   useEffect(() => {
-    if (!mapRef.current || !selectedAnnotationId || typeof window.L === 'undefined') return;
+    if (!mapRef.current || typeof window.L === 'undefined') return;
 
-    const annotation = annotations.find(ann => ann.id === selectedAnnotationId);
-    const marker = markersRef.current.get(selectedAnnotationId);
+    const map = mapRef.current;
     
-    if (annotation && marker) {
-      mapRef.current.setView([annotation.gpsLat, annotation.gpsLon], 15);
-      marker.openPopup();
+    if (selectedAnnotationId) {
+      const annotation = annotations.find(ann => ann.id === selectedAnnotationId);
+      const marker = markersRef.current.get(selectedAnnotationId);
+      
+      if (annotation && marker) {
+        // Zoom in and center on the selected marker
+        map.setView([annotation.gpsLat, annotation.gpsLon], 17);
+        marker.openPopup();
+      }
+    } else {
+      // When no annotation is selected, show all markers with a reasonable zoom level
+      if (annotations.length > 0) {
+        const markers = markersRef.current;
+        const group = new window.L.featureGroup(Array.from(markers.values()));
+        map.fitBounds(group.getBounds().pad(0.1));
+      }
     }
   }, [selectedAnnotationId, annotations]);
 

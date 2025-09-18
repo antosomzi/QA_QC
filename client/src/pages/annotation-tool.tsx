@@ -1,24 +1,34 @@
 import { useState, useCallback, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
+import { Link } from "wouter";
 import VideoPlayer from "@/components/video-player";
 import MapPanel from "@/components/map-panel";
 import AnnotationList from "@/components/annotation-list";
 import FileUpload from "@/components/file-upload";
+import MapOnlyView from "@/components/map-only-view";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import type { Video, GpsData, Annotation, AnnotationExport } from "@shared/schema";
+import { ArrowLeft, Map, Video } from "lucide-react";
+import type { Video as VideoType, GpsData, Annotation, AnnotationExport } from "@shared/schema";
 
 export default function AnnotationTool() {
   const params = useParams();
   const folderId = params.folderId as string;
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [currentFrame, setCurrentFrame] = useState(0);
+  const [viewMode, setViewMode] = useState<"video" | "map">("video");
   const { toast } = useToast();
 
+  // Fetch folder data to get project ID for back navigation
+  const { data: folder } = useQuery({
+    queryKey: ["folder", folderId],
+    queryFn: () => fetch(`/api/folders/${folderId}`).then(res => res.json())
+  });
+
   // Fetch videos for this folder
-  const { data: videos = [], refetch: refetchVideos } = useQuery<Video[]>({
+  const { data: videos = [], refetch: refetchVideos } = useQuery<VideoType[]>({
     queryKey: ["folder-videos", folderId],
     queryFn: () => fetch(`/api/folders/${folderId}/videos`).then(res => res.json())
   });
@@ -167,13 +177,47 @@ export default function AnnotationTool() {
     }
   }, [folderId, refetchAnnotations, toast]);
 
+  // Functions to handle view mode changes
+  const toggleViewMode = () => {
+    setViewMode(viewMode === "video" ? "map" : "video");
+  };
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="h-screen bg-background text-foreground flex flex-col">
       {/* Header */}
       <header className="bg-card border-b border-border px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <h1 className="text-xl font-semibold text-foreground">Video Annotation Tool</h1>
+            {viewMode === "video" ? (
+              folder ? (
+                folder.projectId ? (
+                  <Link to={`/project/${folder.projectId}`}>
+                    <Button variant="outline" size="sm">
+                      <ArrowLeft className="w-4 h-4 mr-2" />
+                      Back to Folders
+                    </Button>
+                  </Link>
+                ) : null
+              ) : (
+                // Show a disabled back button while loading
+                <Button variant="outline" size="sm" disabled>
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Back to Folders
+                </Button>
+              )
+            ) : (
+              <Button 
+                onClick={toggleViewMode}
+                variant="outline" 
+                size="sm"
+              >
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Video View
+              </Button>
+            )}
+            <h1 className="text-xl font-semibold text-foreground">
+              {viewMode === "video" ? "Video Annotation Tool" : "Map Annotation Tool"}
+            </h1>
             <div className="flex items-center space-x-2 text-sm text-muted-foreground">
               <span className="w-2 h-2 bg-primary rounded-full"></span>
               <span>Ready</span>
@@ -181,6 +225,18 @@ export default function AnnotationTool() {
           </div>
           
           <div className="flex items-center space-x-3">
+            {viewMode === "video" && (
+              <Button 
+                onClick={toggleViewMode}
+                size="sm"
+                variant="outline"
+                data-testid="button-toggle-view"
+              >
+                <Map className="w-4 h-4 mr-2" />
+                Map View
+              </Button>
+            )}
+            
             <label className="cursor-pointer">
               <input
                 type="file"
@@ -207,47 +263,63 @@ export default function AnnotationTool() {
         </div>
       </header>
 
-      <div className="flex h-[calc(100vh-80px)]">
-        {/* Left Panel - Video Player */}
-        <div className="flex-1 bg-background border-r border-border">
-        {selectedVideo && gpsData && !gpsDataError ? (
-          <VideoPlayer
-            video={selectedVideo}
-            gpsData={gpsData}
-            annotations={annotations}
-            currentFrame={currentFrame}
-            onFrameChange={setCurrentFrame}
-            onAnnotationCreate={handleAnnotationCreate}
-            selectedAnnotationId={selectedAnnotationId}
-            onAnnotationSelect={setSelectedAnnotationId}
-            folderId={folderId}
-          />
-        ) :(
-          <FileUpload onVideoUpload={handleVideoUpload} folderId={folderId} />
-        )}
-        </div>
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col">
+        {viewMode === "video" ? (
+          <div className="flex h-[calc(100vh-80px)]">
+            {/* Left Panel - Video Player */}
+            <div className="flex-1 bg-background border-r border-border">
+            {selectedVideo && gpsData && !gpsDataError ? (
+              <VideoPlayer
+                video={selectedVideo}
+                gpsData={gpsData}
+                annotations={annotations}
+                currentFrame={currentFrame}
+                onFrameChange={setCurrentFrame}
+                onAnnotationCreate={handleAnnotationCreate}
+                selectedAnnotationId={selectedAnnotationId}
+                onAnnotationSelect={setSelectedAnnotationId}
+                folderId={folderId}
+              />
+            ) :(
+              <FileUpload onVideoUpload={handleVideoUpload} folderId={folderId} />
+            )}
+            </div>
 
-        {/* Right Panel - Map and Annotations */}
-        <div className="w-2/5 bg-card border-l border-border flex flex-col">
-          <div className="flex-1 relative">
-            <MapPanel
-              annotations={annotations}
-              selectedAnnotationId={selectedAnnotationId}
-              onAnnotationSelect={setSelectedAnnotationId}
-              onMarkerMove={handleAnnotationUpdate}
-            />
+            {/* Right Panel - Map and Annotations */}
+            <div className="w-2/5 bg-card border-l border-border flex flex-col">
+              <div className="flex-1 relative">
+                <MapPanel
+                  annotations={annotations}
+                  selectedAnnotationId={selectedAnnotationId}
+                  onAnnotationSelect={setSelectedAnnotationId}
+                  onMarkerMove={handleAnnotationUpdate}
+                />
+              </div>
+              
+              <div className="h-80 border-t border-border bg-background p-4">
+                <AnnotationList
+                  annotations={annotations}
+                  selectedAnnotationId={selectedAnnotationId}
+                  onAnnotationSelect={setSelectedAnnotationId}
+                  onAnnotationUpdate={handleAnnotationUpdate}
+                  onAnnotationDelete={handleAnnotationDelete}
+                />
+              </div>
+            </div>
           </div>
-          
-          <div className="h-80 border-t border-border bg-background p-4">
-            <AnnotationList
+        ) : (
+          <div className="flex-1 h-0">
+            <MapOnlyView
               annotations={annotations}
               selectedAnnotationId={selectedAnnotationId}
               onAnnotationSelect={setSelectedAnnotationId}
               onAnnotationUpdate={handleAnnotationUpdate}
               onAnnotationDelete={handleAnnotationDelete}
+              onBackToVideoView={() => setViewMode("video")}
             />
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
