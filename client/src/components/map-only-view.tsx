@@ -93,14 +93,18 @@ export default function MapOnlyView({
             <h3 className="text-lg font-semibold">Annotations</h3>
             <p className="text-sm text-muted-foreground">{annotations.length} items</p>
           </div>
-          <div className="flex-1 border-t border-border bg-background p-4">
-            <AnnotationList
-              annotations={annotations}
-              selectedAnnotationId={selectedAnnotationId}
-              onAnnotationSelect={onAnnotationSelect}
-              onAnnotationUpdate={onAnnotationUpdate}
-              onAnnotationDelete={onAnnotationDelete}
-            />
+          <div className="flex-1 overflow-hidden p-4">
+            <div className="h-[70vh] overflow-y-auto rounded-lg border border-border">
+              <div className="p-4 space-y-2">
+                <AnnotationList
+                  annotations={annotations}
+                  selectedAnnotationId={selectedAnnotationId}
+                  onAnnotationSelect={onAnnotationSelect}
+                  onAnnotationUpdate={onAnnotationUpdate}
+                  onAnnotationDelete={onAnnotationDelete}
+                />
+              </div>
+            </div>
           </div>
         </div>
       )}

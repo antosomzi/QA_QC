@@ -297,7 +297,7 @@ export default function AnnotationTool() {
                 />
               </div>
               
-              <div className="h-80 border-t border-border bg-background p-4">
+              <div className="h-80 border-t border-border bg-background p-4 flex flex-col">
                 <AnnotationList
                   annotations={annotations}
                   selectedAnnotationId={selectedAnnotationId}
