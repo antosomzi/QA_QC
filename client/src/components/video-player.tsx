@@ -95,10 +95,8 @@ export default function VideoPlayer({
     if (!video.fps || !videoRef.current) return;
     
     setIsManualNavigation(true);
-    // Calculer le temps exact pour la frame cible
-    // Ajouter 0.5 / fps pour se positionner au milieu de la frame
-    // Cela garantit que Math.round donnera la bonne frame
-    const targetTime = (targetFrame + 0.5) / video.fps;
+    //bug_video_correction.md for the + 0.3 offset explanation
+    const targetTime = (targetFrame + 0.3) / video.fps;
     
     // Effectuer le seek
     videoRef.current.currentTime = targetTime;
