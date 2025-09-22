@@ -1,6 +1,6 @@
-import type { Annotation } from "@shared/schema";
+import type { Annotation, BoundingBox } from "@shared/schema";
 
-export interface BoundingBox {
+export interface DrawingBBox {
   x: number;
   y: number;
   width: number;
@@ -28,15 +28,15 @@ export function getCanvasCoordinates(
 }
 
 /**
- * Checks if coordinates are near an annotation's edge or corner
+ * Checks if coordinates are near a bounding box's edge or corner
  */
-export function getAnnotationHandle(
-  ann: Annotation,
+export function getBoundingBoxHandle(
+  bbox: BoundingBox,
   x: number,
   y: number,
   tolerance = 10
 ) {
-  const { bboxX, bboxY, bboxWidth, bboxHeight } = ann;
+  const { bboxX, bboxY, bboxWidth, bboxHeight } = bbox;
   const right = bboxX + bboxWidth;
   const bottom = bboxY + bboxHeight;
 
@@ -67,37 +67,37 @@ export function getAnnotationHandle(
 }
 
 /**
- * Finds annotation and handle at coordinates
+ * Finds bounding box and handle at coordinates
  */
-export function findAnnotationAt(
+export function findBoundingBoxAt(
   x: number,
   y: number,
-  annotations: Annotation[],
+  boundingBoxes: BoundingBox[],
   currentFrame: number,
   tolerance = 10
 ) {
-  const currentFrameAnnotations = annotations.filter(
-    (ann) => ann.frameIndex === currentFrame
+  const currentFrameBoundingBoxes = boundingBoxes.filter(
+    (bbox) => bbox.frameIndex === currentFrame
   );
 
   // First check for handles (higher priority)
-  for (const ann of currentFrameAnnotations) {
-    const handle = getAnnotationHandle(ann, x, y, tolerance);
+  for (const bbox of currentFrameBoundingBoxes) {
+    const handle = getBoundingBoxHandle(bbox, x, y, tolerance);
     if (handle) {
-      return { annotation: ann, handle };
+      return { boundingBox: bbox, handle };
     }
   }
 
   // Then check for general inside bounding box
-  const annotation = currentFrameAnnotations.find(
-    (ann) =>
-      x >= ann.bboxX &&
-      x <= ann.bboxX + ann.bboxWidth &&
-      y >= ann.bboxY &&
-      y <= ann.bboxY + ann.bboxHeight
+  const boundingBox = currentFrameBoundingBoxes.find(
+    (bbox) =>
+      x >= bbox.bboxX &&
+      x <= bbox.bboxX + bbox.bboxWidth &&
+      y >= bbox.bboxY &&
+      y <= bbox.bboxY + bbox.bboxHeight
   );
 
-  return annotation ? { annotation, handle: "move" } : null;
+  return boundingBox ? { boundingBox, handle: "move" } : null;
 }
 
 /**
@@ -112,14 +112,46 @@ export function formatTime(time: number) {
 }
 
 /**
+ * Get CSS class for annotation marker color based on index
+ */
+export function getAnnotationCSSColor(index: number): string {
+  const colors = ['bg-primary', 'bg-accent', 'bg-yellow-500', 'bg-green-500', 'bg-purple-500'];
+  return colors[index % colors.length];
+}
+
+/**
+ * Get hex color for annotation based on index (for canvas drawing and maps)
+ */
+export function getAnnotationHexColor(index: number): string {
+  const colors = ['#3B82F6', '#8B5CF6', '#EAB308', '#10B981', '#A855F7'];
+  //               primary    accent    yellow-500 green-500 purple-500
+  return colors[index % colors.length];
+}
+
+/**
+ * Get annotation index from annotations array by annotation ID
+ */
+export function getAnnotationIndex(annotations: Annotation[], annotationId: string): number {
+  return annotations.findIndex(ann => ann.id === annotationId);
+}
+
+/**
+ * Get annotation color (hex) by annotation ID - convenience function
+ */
+export function getAnnotationColor(annotations: Annotation[], annotationId: string): string {
+  const index = getAnnotationIndex(annotations, annotationId);
+  return getAnnotationHexColor(index);
+}
+
+/**
  * Calculates new bounding box dimensions when resizing
  */
 export function calculateResizedBbox(
-  selectedAnnotation: Annotation,
+  selectedBoundingBox: BoundingBox,
   resizeHandle: string,
   coords: { x: number; y: number }
 ) {
-  const { bboxX, bboxY, bboxWidth, bboxHeight } = selectedAnnotation;
+  const { bboxX, bboxY, bboxWidth, bboxHeight } = selectedBoundingBox;
   let newBboxX = bboxX;
   let newBboxY = bboxY;
   let newBboxWidth = bboxWidth;

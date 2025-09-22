@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Edit, Trash2 } from "lucide-react";
 import type { Annotation } from "@shared/schema";
+import { getAnnotationCSSColor } from "./helpers/video-player-helpers";
 
 interface AnnotationListProps {
   annotations: Annotation[];
@@ -22,7 +23,6 @@ interface EditModalProps {
 
 function EditAnnotationModal({ annotation, onSave, onClose }: EditModalProps) {
   const [label, setLabel] = useState(annotation.label);
-  const [frameIndex, setFrameIndex] = useState(annotation.frameIndex ?? null);
   const [gpsLat, setGpsLat] = useState(annotation.gpsLat);
   const [gpsLon, setGpsLon] = useState(annotation.gpsLon);
 
@@ -32,11 +32,6 @@ function EditAnnotationModal({ annotation, onSave, onClose }: EditModalProps) {
       gpsLat,
       gpsLon,
     };
-    
-    // Only include frameIndex if it's not null
-    if (frameIndex !== null) {
-      updates.frameIndex = frameIndex;
-    }
     
     onSave(updates);
     onClose();
@@ -64,29 +59,6 @@ function EditAnnotationModal({ annotation, onSave, onClose }: EditModalProps) {
             onChange={(e) => setLabel(e.target.value)}
             data-testid="input-annotation-label"
           />
-        </div>
-        
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label htmlFor="frame">Frame</Label>
-            <Input
-              id="frame"
-              type="number"
-              value={frameIndex ?? ''}
-              onChange={(e) => setFrameIndex(e.target.value ? parseInt(e.target.value) : null)}
-              data-testid="input-frame-index"
-            />
-          </div>
-          <div>
-            <Label htmlFor="timestamp">Timestamp</Label>
-            <Input
-              id="timestamp"
-              value={formatTimestamp(annotation.frameTimestampMs)}
-              readOnly
-              className="bg-muted"
-              data-testid="text-timestamp"
-            />
-          </div>
         </div>
         
         <div className="grid grid-cols-2 gap-3">
@@ -154,11 +126,6 @@ export default function AnnotationList({
     return `${abs.toFixed(4)}°${direction}`;
   };
 
-  const getMarkerColor = (index: number) => {
-    const colors = ['bg-primary', 'bg-accent', 'bg-yellow-500', 'bg-green-500', 'bg-purple-500'];
-    return colors[index % colors.length];
-  };
-
   return (
     <>
       <div className="flex items-center justify-between mb-4">
@@ -192,20 +159,13 @@ export default function AnnotationList({
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  <div className={`w-2 h-2 ${getMarkerColor(index)} rounded-full`}></div>
+                  <div className={`w-2 h-2 ${getAnnotationCSSColor(index)} rounded-full`}></div>
                   <div>
                     <p className="text-sm font-medium" data-testid={`text-annotation-label-${annotation.id}`}>
                       {annotation.label}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {annotation.frameIndex !== undefined && annotation.frameIndex !== null ? (
-                        <>Frame <span data-testid={`text-annotation-frame-${annotation.id}`}>{annotation.frameIndex}</span> • </>
-                      ) : null}
-                      <span className="ml-1" data-testid={`text-annotation-time-${annotation.id}`}>
-                        {annotation.frameTimestampMs !== undefined && annotation.frameTimestampMs !== null ? 
-                          formatTimestamp(annotation.frameTimestampMs) : 
-                          'No timestamp'}
-                      </span>
+                      GPS: {annotation.gpsLat.toFixed(5)}, {annotation.gpsLon.toFixed(5)}
                     </p>
                   </div>
                 </div>

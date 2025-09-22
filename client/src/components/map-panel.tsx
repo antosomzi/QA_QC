@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { Annotation } from "@shared/schema";
+import { getAnnotationColor } from "./helpers/video-player-helpers";
 
 // Declare Leaflet types
 declare global {
@@ -83,10 +84,7 @@ export default function MapPanel({
         marker.bindPopup(`
           <div>
             <strong>${annotation.label}</strong><br>
-            ${annotation.frameIndex !== undefined && annotation.frameIndex !== null ? `Frame: ${annotation.frameIndex}<br>` : ''}
-            ${annotation.frameTimestampMs !== undefined && annotation.frameTimestampMs !== null ? 
-              `Time: ${Math.floor(annotation.frameTimestampMs / 1000 / 60)}:${Math.floor((annotation.frameTimestampMs / 1000) % 60).toString().padStart(2, '0')}<br>` : 
-              ''}
+            GPS: ${annotation.gpsLat.toFixed(6)}, ${annotation.gpsLon.toFixed(6)}
           </div>
         `);
         
@@ -111,13 +109,14 @@ export default function MapPanel({
       
       // Update marker style based on selection
       const isSelected = annotation.id === selectedAnnotationId;
+      const markerColor = getAnnotationColor(annotations, annotation.id);
       const icon = window.L.divIcon({
         className: `custom-marker ${isSelected ? 'selected' : ''}`,
         html: `<div style="
           width: 20px; 
           height: 20px; 
           border-radius: 50%; 
-          background-color: ${isSelected ? '#60A5FA' : '#3B82F6'}; 
+          background-color: ${isSelected ? '#FF6B6B' : markerColor}; 
           border: 2px solid white;
           box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         "></div>`,
@@ -147,16 +146,23 @@ export default function MapPanel({
       const marker = markersRef.current.get(selectedAnnotationId);
       
       if (annotation && marker) {
-        // Zoom in and center on the selected marker
-        map.setView([annotation.gpsLat, annotation.gpsLon], 17);
-        marker.openPopup();
+        // Zoom IN to level 18 and center on the selected marker (more zoomed)
+        map.setView([annotation.gpsLat, annotation.gpsLon], 18);
+        // Don't open popup automatically - it's annoying
+        // marker.openPopup();
       }
     } else {
-      // When no annotation is selected, show all markers with a reasonable zoom level
+      // When no annotation is selected, zoom OUT to show all markers (corrected logic)
       if (annotations.length > 0) {
+        // Fit bounds to show all markers
         const markers = markersRef.current;
-        const group = new window.L.featureGroup(Array.from(markers.values()));
-        map.fitBounds(group.getBounds().pad(0.1));
+        if (markers.size > 0) {
+          // Get all markers and fit bounds
+          const group = new window.L.featureGroup(Array.from(markers.values()));
+          const bounds = group.getBounds();
+          const center = bounds.getCenter();
+          map.setView([center.lat, center.lng], 16); // Less zoom out when deselected
+        }
       }
     }
   }, [selectedAnnotationId, annotations]);

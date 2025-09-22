@@ -9,7 +9,9 @@ import {
   type Project,
   type InsertProject,
   type Folder,
-  type InsertFolder
+  type InsertFolder,
+  type BoundingBox,
+  type AnnotationWithBoundingBoxes
 } from "@shared/schema";
 
 export interface IStorage {
@@ -43,6 +45,7 @@ export interface IStorage {
   getAnnotation(id: string): Promise<Annotation | undefined>;
   getAnnotationsByVideoId(videoId: string): Promise<Annotation[]>;
   getAnnotationsByFolderId(folderId: string): Promise<Annotation[]>;
+  getAnnotationsWithBoundingBoxesByFolderId(folderId: string): Promise<AnnotationWithBoundingBoxes[]>;
   updateAnnotation(id: string, annotation: Partial<InsertAnnotation>): Promise<Annotation | undefined>;
   deleteAnnotation(id: string): Promise<boolean>;
   

@@ -12,11 +12,15 @@ import {
   type InsertProject,
   type Folder,
   type InsertFolder,
+  type BoundingBox,
+  type InsertBoundingBox,
+  type AnnotationWithBoundingBoxes,
   projects,
   folders,
   videos,
   gpsData,
-  annotations
+  annotations,
+  boundingBoxes
 } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { IStorage } from "./storage";
@@ -156,6 +160,24 @@ export class PostgresStorage implements IStorage {
     return await this.db.select().from(annotations).where(eq(annotations.folderId, folderId));
   }
 
+  async getAnnotationsWithBoundingBoxesByFolderId(folderId: string): Promise<AnnotationWithBoundingBoxes[]> {
+    // Récupérer les annotations
+    const annotationsList = await this.db.select().from(annotations).where(eq(annotations.folderId, folderId));
+    
+    // Pour chaque annotation, récupérer ses bounding boxes
+    const annotationsWithBboxes = await Promise.all(
+      annotationsList.map(async (annotation) => {
+        const bboxes = await this.getBoundingBoxesByAnnotationId(annotation.id);
+        return {
+          ...annotation,
+          boundingBoxes: bboxes
+        };
+      })
+    );
+
+    return annotationsWithBboxes;
+  }
+
   async updateAnnotation(id: string, updates: Partial<InsertAnnotation>): Promise<Annotation | undefined> {
     const [annotation] = await this.db.update(annotations).set(updates).where(eq(annotations.id, id)).returning();
     return annotation;
@@ -163,6 +185,26 @@ export class PostgresStorage implements IStorage {
 
   async deleteAnnotation(id: string): Promise<boolean> {
     const result = await this.db.delete(annotations).where(eq(annotations.id, id)).returning({ id: annotations.id });
+    return result.length > 0;
+  }
+
+  // Bounding Box methods
+  async createBoundingBox(insertBoundingBox: InsertBoundingBox): Promise<BoundingBox> {
+    const [boundingBox] = await this.db.insert(boundingBoxes).values(insertBoundingBox).returning();
+    return boundingBox;
+  }
+
+  async getBoundingBoxesByAnnotationId(annotationId: string): Promise<BoundingBox[]> {
+    return await this.db.select().from(boundingBoxes).where(eq(boundingBoxes.annotationId, annotationId));
+  }
+
+  async updateBoundingBox(id: string, updates: Partial<InsertBoundingBox>): Promise<BoundingBox | undefined> {
+    const [boundingBox] = await this.db.update(boundingBoxes).set(updates).where(eq(boundingBoxes.id, id)).returning();
+    return boundingBox;
+  }
+
+  async deleteBoundingBox(id: string): Promise<boolean> {
+    const result = await this.db.delete(boundingBoxes).where(eq(boundingBoxes.id, id)).returning({ id: boundingBoxes.id });
     return result.length > 0;
   }
 

@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { initializeStorage } from "./storage";
-import { insertProjectSchema, insertFolderSchema, insertVideoSchema, insertGpsDataSchema, insertAnnotationSchema } from "@shared/schema";
+import { insertProjectSchema, insertFolderSchema, insertVideoSchema, insertGpsDataSchema, insertAnnotationSchema, insertBoundingBoxSchema } from "@shared/schema";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -341,12 +341,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bounding box routes
+  app.post("/api/bounding-boxes", async (req, res) => {
+    try {
+      const validatedData = insertBoundingBoxSchema.parse(req.body);
+      const boundingBox = await storage.createBoundingBox(validatedData);
+      res.json(boundingBox);
+    } catch (error) {
+      res.status(400).json({ message: error instanceof Error ? error.message : "Failed to create bounding box" });
+    }
+  });
+
+  app.get("/api/bounding-boxes/annotation/:annotationId", async (req, res) => {
+    try {
+      const boundingBoxes = await storage.getBoundingBoxesByAnnotationId(req.params.annotationId);
+      res.json(boundingBoxes);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch bounding boxes" });
+    }
+  });
+
+  app.put("/api/bounding-boxes/:id", async (req, res) => {
+    try {
+      const validatedData = insertBoundingBoxSchema.partial().parse(req.body);
+      const boundingBox = await storage.updateBoundingBox(req.params.id, validatedData);
+      if (!boundingBox) {
+        return res.status(404).json({ message: "Bounding box not found" });
+      }
+      res.json(boundingBox);
+    } catch (error) {
+      res.status(400).json({ message: error instanceof Error ? error.message : "Failed to update bounding box" });
+    }
+  });
+
   app.get("/api/annotations/folder/:folderId", async (req, res) => {
     try {
       const annotations = await storage.getAnnotationsByFolderId(req.params.folderId);
       res.json(annotations);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch annotations" });
+    }
+  });
+
+  // Nouvelle route pour récupérer les annotations avec leurs bounding boxes par dossier
+  app.get("/api/annotations/folder/:folderId/with-bboxes", async (req, res) => {
+    try {
+      const annotationsWithBboxes = await storage.getAnnotationsWithBoundingBoxesByFolderId(req.params.folderId);
+      res.json(annotationsWithBboxes);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch annotations with bounding boxes" });
     }
   });
 

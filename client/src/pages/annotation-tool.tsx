@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { ArrowLeft, Map, Video } from "lucide-react";
-import type { Video as VideoType, GpsData, Annotation, AnnotationExport } from "@shared/schema";
+import type { Video as VideoType, GpsData, Annotation, AnnotationWithBoundingBoxes, BoundingBox } from "@shared/schema";
 
 export default function AnnotationTool() {
   const params = useParams();
@@ -52,11 +52,15 @@ export default function AnnotationTool() {
     enabled: !!selectedVideo,
   });
 
-  // Fetch annotations for selected folder
-  const { data: annotations = [], refetch: refetchAnnotations } = useQuery<Annotation[]>({
-    queryKey: ["folder-annotations", folderId],
-    queryFn: () => fetch(`/api/annotations/folder/${folderId}`).then(res => res.json()),
+  // Fetch annotations with bounding boxes for selected folder
+  const { data: annotationsWithBboxes = [], refetch: refetchAnnotations } = useQuery<AnnotationWithBoundingBoxes[]>({
+    queryKey: ["folder-annotations-with-bboxes", folderId],
+    queryFn: () => fetch(`/api/annotations/folder/${folderId}/with-bboxes`).then(res => res.json()),
   });
+
+  // Extract annotations and bounding boxes from the combined data
+  const annotations: Annotation[] = annotationsWithBboxes.map(({ boundingBoxes, ...annotation }) => annotation);
+  const boundingBoxes: BoundingBox[] = annotationsWithBboxes.flatMap(annotation => annotation.boundingBoxes);
 
   const handleVideoUpload = useCallback((videoId: string) => {
     toast({
@@ -67,15 +71,31 @@ export default function AnnotationTool() {
     refetchVideos();
   }, [toast, refetchVideos]);
 
-  const handleAnnotationCreate = useCallback(async (annotation: Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const handleAnnotationCreate = useCallback(async (
+    annotationData: Pick<Annotation, 'folderId' | 'videoId' | 'label' | 'gpsLat' | 'gpsLon'>,
+    boundingBoxData: {
+      frameIndex: number;
+      frameTimestampMs: number;
+      bboxX: number;
+      bboxY: number;
+      bboxWidth: number;
+      bboxHeight: number;
+    }
+  ) => {
     try {
-      // Always include folderId when creating annotations
-      const annotationWithFolder = {
-        ...annotation,
-        folderId: folderId
+      // Create the annotation (object)
+      const response = await apiRequest("POST", "/api/annotations", annotationData);
+      const createdAnnotation = await response.json();
+      
+      // Create the bounding box for this frame
+      const fullBoundingBoxData = {
+        annotationId: createdAnnotation.id,
+        ...boundingBoxData
       };
       
-      await apiRequest("POST", "/api/annotations", annotationWithFolder);
+      // Create the bounding box
+      await apiRequest("POST", "/api/bounding-boxes", fullBoundingBoxData);
+      
       refetchAnnotations();
       toast({
         title: "Annotation created",
@@ -88,7 +108,7 @@ export default function AnnotationTool() {
         variant: "destructive",
       });
     }
-  }, [folderId, refetchAnnotations, toast]);
+  }, [refetchAnnotations, toast]);
 
   const handleAnnotationUpdate = useCallback(async (id: string, updates: Partial<Annotation>) => {
     try {
@@ -102,6 +122,23 @@ export default function AnnotationTool() {
       toast({
         title: "Error",
         description: "Failed to update annotation.",
+        variant: "destructive",
+      });
+    }
+  }, [refetchAnnotations, toast]);
+
+  const handleBoundingBoxUpdate = useCallback(async (id: string, updates: Partial<BoundingBox>) => {
+    try {
+      await apiRequest("PUT", `/api/bounding-boxes/${id}`, updates);
+      refetchAnnotations(); // This will also refetch bounding boxes since they're fetched together
+      toast({
+        title: "Bounding box updated",
+        description: "Bounding box has been successfully updated.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update bounding box.",
         variant: "destructive",
       });
     }
@@ -271,17 +308,19 @@ export default function AnnotationTool() {
             <div className="flex-1 bg-background border-r border-border">
             {selectedVideo && gpsData && !gpsDataError ? (
               <VideoPlayer
-                video={selectedVideo}
-                gpsData={gpsData}
-                annotations={annotations}
-                currentFrame={currentFrame}
-                onFrameChange={setCurrentFrame}
-                onAnnotationCreate={handleAnnotationCreate}
-                onAnnotationUpdate={handleAnnotationUpdate}
-                selectedAnnotationId={selectedAnnotationId}
-                onAnnotationSelect={setSelectedAnnotationId}
-                folderId={folderId}
-              />
+                  video={selectedVideo}
+                  gpsData={gpsData}
+                  annotations={annotations}
+                  boundingBoxes={boundingBoxes}
+                  currentFrame={currentFrame}
+                  onFrameChange={setCurrentFrame}
+                  onAnnotationCreate={handleAnnotationCreate}
+                  onAnnotationUpdate={handleAnnotationUpdate}
+                  onBoundingBoxUpdate={handleBoundingBoxUpdate}
+                  selectedAnnotationId={selectedAnnotationId}
+                  onAnnotationSelect={setSelectedAnnotationId}
+                  folderId={folderId}
+                />
             ) :(
               <FileUpload onVideoUpload={handleVideoUpload} folderId={folderId} />
             )}

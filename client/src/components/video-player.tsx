@@ -4,21 +4,41 @@ import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
 import { getGPSForFrame } from "@/lib/gps-utils";
 import { 
   getCanvasCoordinates, 
-  findAnnotationAt, 
+  findBoundingBoxAt, 
   formatTime, 
   calculateResizedBbox,
-  type BoundingBox
+  getAnnotationColor
 } from "./helpers/video-player-helpers";
-import type { Video, GpsData, Annotation } from "@shared/schema";
+import type { Video, GpsData, Annotation, BoundingBox } from "@shared/schema";
+
+// Type for temporary bounding box during drawing
+type DrawingBBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
 interface VideoPlayerProps {
   video: Video;
   gpsData?: GpsData;
   annotations: Annotation[];
+  boundingBoxes: BoundingBox[];
   currentFrame: number;
   onFrameChange: (frame: number) => void;
-  onAnnotationCreate: (annotation: Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  onAnnotationCreate: (
+    annotationData: Pick<Annotation, 'folderId' | 'videoId' | 'label' | 'gpsLat' | 'gpsLon'>,
+    boundingBoxData: {
+      frameIndex: number;
+      frameTimestampMs: number;
+      bboxX: number;
+      bboxY: number;
+      bboxWidth: number;
+      bboxHeight: number;
+    }
+  ) => void;
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void;
+  onBoundingBoxUpdate: (id: string, updates: Partial<BoundingBox>) => void;
   selectedAnnotationId?: string | null;
   onAnnotationSelect: (id: string | null) => void;
   folderId: string;
@@ -28,10 +48,11 @@ export default function VideoPlayer({
   video,
   gpsData,
   annotations,
+  boundingBoxes,
   currentFrame,
   onFrameChange,
   onAnnotationCreate,
-  onAnnotationUpdate,
+  onBoundingBoxUpdate,
   selectedAnnotationId,
   onAnnotationSelect,
   folderId,
@@ -45,13 +66,13 @@ export default function VideoPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
-  const [currentBBox, setCurrentBBox] = useState<BoundingBox | null>(null);
+  const [currentBBox, setCurrentBBox] = useState<DrawingBBox | null>(null);
   const [isManualNavigation, setIsManualNavigation] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   const [moveStart, setMoveStart] = useState<{ x: number; y: number } | null>(null);
-  const [selectedAnnotation, setSelectedAnnotation] = useState<Annotation | null>(null);
+  const [selectedBoundingBox, setSelectedBoundingBox] = useState<BoundingBox | null>(null);
 
   // Handle video time updates - source de vérité unique
   const handleTimeUpdate = useCallback(() => {
@@ -133,72 +154,76 @@ export default function VideoPlayer({
     
     const coords = getCanvasCoordinatesLocal(e);
     
-    // Check if we're clicking on an annotation handle
-    const result = findAnnotationAt(coords.x, coords.y, annotations, currentFrame, 10);
+    // Check if we're clicking on a bounding box handle
+    const result = findBoundingBoxAt(coords.x, coords.y, boundingBoxes, currentFrame, 10);
     
     if (result) {
-      const { annotation, handle } = result;
+      const { boundingBox, handle } = result;
       
-      // Select the annotation
-      onAnnotationSelect(annotation.id);
-      setSelectedAnnotation(annotation);
-      
-      if (handle === 'move') {
-        // Start moving
-        setIsMoving(true);
-        setMoveStart(coords);
-      } else {
-        // Start resizing
-        setIsResizing(true);
-        setResizeHandle(handle);
+      // Select the annotation associated with this bounding box
+      const annotation = annotations.find(ann => ann.id === boundingBox.annotationId);
+      if (annotation) {
+        onAnnotationSelect(annotation.id);
+        setSelectedBoundingBox(boundingBox);
+        
+        if (handle === 'move') {
+          // Start moving
+          setIsMoving(true);
+          setMoveStart(coords);
+        } else {
+          // Start resizing
+          setIsResizing(true);
+          setResizeHandle(handle);
+        }
+        
+        // Prevent drawing when interacting with existing bounding boxes
+        return;
       }
-      
-      // Prevent drawing when interacting with existing annotations
-      return;
     }
     
-    // If not clicking on an annotation, start drawing a new one
+    // If we clicked on empty space, start drawing a new bounding box
+    // But don't deselect yet - we'll do that in mouseUp if no drag happens
     setIsDrawing(true);
     setDrawStart(coords);
     setCurrentBBox(null);
-  }, [gpsData, getCanvasCoordinatesLocal, annotations, currentFrame, onAnnotationSelect]);
+  }, [gpsData, getCanvasCoordinatesLocal, boundingBoxes, currentFrame, annotations, onAnnotationSelect]);
 
   const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
     const coords = getCanvasCoordinatesLocal(e);
     
-    if (isMoving && selectedAnnotation && moveStart) {
-      // Move the annotation
+    if (isMoving && selectedBoundingBox && moveStart) {
+      // Move the bounding box
       const dx = coords.x - moveStart.x;
       const dy = coords.y - moveStart.y;
       
-      // Update the selected annotation's position
-      const updatedAnnotation = {
-        ...selectedAnnotation,
-        bboxX: Math.round(selectedAnnotation.bboxX + dx),
-        bboxY: Math.round(selectedAnnotation.bboxY + dy)
+      // Update the selected bounding box's position
+      const updatedBoundingBox = {
+        ...selectedBoundingBox,
+        bboxX: Math.round(selectedBoundingBox.bboxX + dx),
+        bboxY: Math.round(selectedBoundingBox.bboxY + dy)
       };
       
-      setSelectedAnnotation(updatedAnnotation);
+      setSelectedBoundingBox(updatedBoundingBox);
       setMoveStart(coords);
       return;
     }
     
-    if (isResizing && selectedAnnotation && resizeHandle) {
-      // Resize the annotation
-      const resizedBbox = calculateResizedBbox(selectedAnnotation, resizeHandle, coords);
+    if (isResizing && selectedBoundingBox && resizeHandle) {
+      // Resize the bounding box
+      const resizedBbox = calculateResizedBbox(selectedBoundingBox, resizeHandle, coords);
       
-      // Update the selected annotation's dimensions
-      const updatedAnnotation = {
-        ...selectedAnnotation,
+      // Update the selected bounding box's dimensions
+      const updatedBoundingBox = {
+        ...selectedBoundingBox,
         ...resizedBbox
       };
       
-      setSelectedAnnotation(updatedAnnotation);
+      setSelectedBoundingBox(updatedBoundingBox);
       return;
     }
     
     if (isDrawing && drawStart) {
-      const bbox: BoundingBox = {
+      const bbox: DrawingBBox = {
         x: Math.min(drawStart.x, coords.x),
         y: Math.min(drawStart.y, coords.y),
         width: Math.abs(coords.x - drawStart.x),
@@ -210,7 +235,7 @@ export default function VideoPlayer({
     }
     
     // Update cursor based on what's under the mouse
-    const result = findAnnotationAt(coords.x, coords.y, annotations, currentFrame, 10);
+    const result = findBoundingBoxAt(coords.x, coords.y, boundingBoxes, currentFrame, 10);
     if (canvasRef.current) {
       const canvas = canvasRef.current;
       if (result) {
@@ -242,29 +267,28 @@ export default function VideoPlayer({
         canvas.style.cursor = 'crosshair';
       }
     }
-  }, [isDrawing, drawStart, isMoving, isResizing, selectedAnnotation, moveStart, resizeHandle, annotations, currentFrame, getCanvasCoordinatesLocal]);
+  }, [isDrawing, drawStart, isMoving, isResizing, selectedBoundingBox, moveStart, resizeHandle, boundingBoxes, currentFrame, getCanvasCoordinatesLocal]);
 
   const handleCanvasMouseUp = useCallback((e: React.MouseEvent) => {
-    const coords = getCanvasCoordinatesLocal(e);
     
-    if (isMoving && selectedAnnotation) {
-      // Finish moving - update the annotation
-      onAnnotationUpdate(selectedAnnotation.id, {
-        bboxX: selectedAnnotation.bboxX,
-        bboxY: selectedAnnotation.bboxY
+    if (isMoving && selectedBoundingBox) {
+      // Finish moving - update the bounding box
+      onBoundingBoxUpdate(selectedBoundingBox.id, {
+        bboxX: selectedBoundingBox.bboxX,
+        bboxY: selectedBoundingBox.bboxY
       });
       setIsMoving(false);
       setMoveStart(null);
       return;
     }
     
-    if (isResizing && selectedAnnotation) {
-      // Finish resizing - update the annotation
-      onAnnotationUpdate(selectedAnnotation.id, {
-        bboxX: selectedAnnotation.bboxX,
-        bboxY: selectedAnnotation.bboxY,
-        bboxWidth: selectedAnnotation.bboxWidth,
-        bboxHeight: selectedAnnotation.bboxHeight
+    if (isResizing && selectedBoundingBox) {
+      // Finish resizing - update the bounding box
+      onBoundingBoxUpdate(selectedBoundingBox.id, {
+        bboxX: selectedBoundingBox.bboxX,
+        bboxY: selectedBoundingBox.bboxY,
+        bboxWidth: selectedBoundingBox.bboxWidth,
+        bboxHeight: selectedBoundingBox.bboxHeight
       });
       setIsResizing(false);
       setResizeHandle(null);
@@ -272,33 +296,55 @@ export default function VideoPlayer({
     }
     
     if (isDrawing && currentBBox && gpsData && video.fps) {
-      // Create new annotation as before
-      const gpsPoint = getGPSForFrame(gpsData.data as any[], currentFrame, video.fps);
-      if (!gpsPoint) {
-        console.warn("No GPS data available for current frame");
-        return;
+      // Check if the bounding box has minimum size (avoid point-like boxes)
+      const minSize = 10;
+      if (currentBBox.width >= minSize && currentBBox.height >= minSize) {
+        // Create new annotation with bounding box only if it's big enough
+        const gpsPoint = getGPSForFrame(gpsData.data as any[], currentFrame, video.fps);
+        if (!gpsPoint) {
+          console.warn("No GPS data available for current frame");
+          setIsDrawing(false);
+          setDrawStart(null);
+          setCurrentBBox(null);
+          return;
+        }
+
+        // Prepare the data for both annotation and bounding box
+        const annotationData = {
+          folderId: folderId,
+          videoId: video.id,
+          label: "New Annotation",
+          gpsLat: gpsPoint.lat,
+          gpsLon: gpsPoint.lon,
+        };
+
+        const boundingBoxData = {
+          frameIndex: currentFrame,
+          frameTimestampMs: Math.floor(currentTime * 1000),
+          bboxX: Math.round(currentBBox.x),
+          bboxY: Math.round(currentBBox.y),
+          bboxWidth: Math.round(currentBBox.width),
+          bboxHeight: Math.round(currentBBox.height),
+        };
+
+        // Call the function with separated data
+        onAnnotationCreate(annotationData, boundingBoxData);
+      } else {
+        // If the box is too small (like a simple click), deselect instead
+        onAnnotationSelect(null);
       }
-
-      const annotation = {
-        folderId: folderId,
-        videoId: video.id,
-        frameIndex: currentFrame,
-        frameTimestampMs: Math.floor(currentTime * 1000),
-        gpsLat: gpsPoint.lat,
-        gpsLon: gpsPoint.lon,
-        bboxX: Math.round(currentBBox.x),
-        bboxY: Math.round(currentBBox.y),
-        bboxWidth: Math.round(currentBBox.width),
-        bboxHeight: Math.round(currentBBox.height),
-        label: "New Annotation",
-      };
-
-      onAnnotationCreate(annotation);
       
       setIsDrawing(false);
       setDrawStart(null);
       setCurrentBBox(null);
       return;
+    }
+    
+    // If we're here, it means we clicked without any interaction
+    // Check if we clicked on empty space to deselect
+    if (!isMoving && !isResizing) {
+      // Simple click on empty space - deselect
+      onAnnotationSelect(null);
     }
     
     // Reset states
@@ -309,7 +355,7 @@ export default function VideoPlayer({
     setCurrentBBox(null);
     setMoveStart(null);
     setResizeHandle(null);
-  }, [isDrawing, currentBBox, gpsData, video, currentFrame, currentTime, onAnnotationCreate, folderId, isMoving, isResizing, selectedAnnotation, onAnnotationUpdate, getCanvasCoordinatesLocal]);
+  }, [isDrawing, currentBBox, gpsData, video, currentFrame, currentTime, onAnnotationCreate, folderId, isMoving, isResizing, selectedBoundingBox, onBoundingBoxUpdate, getCanvasCoordinatesLocal, onAnnotationSelect]);
 
   // Draw annotations on canvas
   useEffect(() => {
@@ -322,21 +368,29 @@ export default function VideoPlayer({
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Draw existing annotations for current frame
-    annotations
-      .filter(ann => ann.frameIndex === currentFrame)
-      .forEach(ann => {
-        // Skip drawing the selected annotation if it's being moved/resized (we'll draw it separately)
-        if ((isMoving || isResizing) && ann.id === selectedAnnotation?.id) return;
+    // Draw existing bounding boxes for current frame
+    boundingBoxes
+      .filter(bbox => bbox.frameIndex === currentFrame)
+      .forEach(bbox => {
+        // Find the corresponding annotation to get the label
+        const annotation = annotations.find(ann => ann.id === bbox.annotationId);
+        if (!annotation) return;
         
-        ctx.strokeStyle = ann.id === selectedAnnotationId ? '#FF6B6B' : '#E53E3E';
-        ctx.lineWidth = 5;
-        ctx.strokeRect(ann.bboxX, ann.bboxY, ann.bboxWidth, ann.bboxHeight);
+        // Skip drawing the selected bounding box if it's being moved/resized (we'll draw it separately)
+        if ((isMoving || isResizing) && bbox.id === selectedBoundingBox?.id) return;
+        
+        // Get consistent color for this annotation
+        const annotationColor = getAnnotationColor(annotations, annotation.id);
+        const isSelected = annotation.id === selectedAnnotationId;
+        
+        ctx.strokeStyle = isSelected ? '#FF6B6B' : annotationColor; // Red for selected, unique color otherwise
+        ctx.lineWidth = isSelected ? 6 : 4; // Thicker line for selected
+        ctx.strokeRect(bbox.bboxX, bbox.bboxY, bbox.bboxWidth, bbox.bboxHeight);
         
         // Draw label
-        ctx.fillStyle = ann.id === selectedAnnotationId ? '#FF6B6B' : '#E53E3E';
-        ctx.font = '14px Inter';
-        ctx.fillText(ann.label, ann.bboxX, ann.bboxY - 5);
+        ctx.fillStyle = isSelected ? '#FF6B6B' : annotationColor;
+        ctx.font = isSelected ? 'bold 14px Inter' : '14px Inter';
+        ctx.fillText(annotation.label, bbox.bboxX, bbox.bboxY - 5);
       });
     
     // Draw current bounding box being drawn
@@ -348,47 +402,58 @@ export default function VideoPlayer({
       ctx.setLineDash([]);
     }
     
-    // Draw the selected annotation being moved/resized
-    if ((isMoving || isResizing) && selectedAnnotation) {
-      ctx.strokeStyle = '#FF6B6B';
-      ctx.lineWidth = 5;
-      ctx.strokeRect(selectedAnnotation.bboxX, selectedAnnotation.bboxY, selectedAnnotation.bboxWidth, selectedAnnotation.bboxHeight);
+    // Draw the selected bounding box being moved/resized
+    if ((isMoving || isResizing) && selectedBoundingBox) {
+      // Find the corresponding annotation to get the label and color
+      const annotation = annotations.find(ann => ann.id === selectedBoundingBox.annotationId);
       
-      // Draw label
-      ctx.fillStyle = '#FF6B6B';
-      ctx.font = '14px Inter';
-      ctx.fillText(selectedAnnotation.label, selectedAnnotation.bboxX, selectedAnnotation.bboxY - 5);
-      
-      // Draw handles if resizing
-      if (isResizing) {
-        ctx.fillStyle = '#FF6B6B';
-        const handleSize = 8;
-        const { bboxX, bboxY, bboxWidth, bboxHeight } = selectedAnnotation;
-        const corners = [
-          { x: bboxX, y: bboxY }, // nw
-          { x: bboxX + bboxWidth, y: bboxY }, // ne
-          { x: bboxX, y: bboxY + bboxHeight }, // sw
-          { x: bboxX + bboxWidth, y: bboxY + bboxHeight } // se
-        ];
+      if (annotation) {
         
-        corners.forEach(corner => {
-          ctx.fillRect(
-            corner.x - handleSize / 2,
-            corner.y - handleSize / 2,
-            handleSize,
-            handleSize
-          );
-        });
+        ctx.strokeStyle = '#FF6B6B'; // Always red when selected and moving/resizing
+        ctx.lineWidth = 6;
+        ctx.strokeRect(selectedBoundingBox.bboxX, selectedBoundingBox.bboxY, selectedBoundingBox.bboxWidth, selectedBoundingBox.bboxHeight);
+        
+        // Draw label
+        ctx.fillStyle = '#FF6B6B';
+        ctx.font = 'bold 14px Inter';
+        ctx.fillText(annotation.label, selectedBoundingBox.bboxX, selectedBoundingBox.bboxY - 5);
+        
+        // Draw handles if resizing
+        if (isResizing) {
+          ctx.fillStyle = '#FF6B6B';
+          const handleSize = 8;
+          const { bboxX, bboxY, bboxWidth, bboxHeight } = selectedBoundingBox;
+          const corners = [
+            { x: bboxX, y: bboxY }, // nw
+            { x: bboxX + bboxWidth, y: bboxY }, // ne
+            { x: bboxX, y: bboxY + bboxHeight }, // sw
+            { x: bboxX + bboxWidth, y: bboxY + bboxHeight } // se
+          ];
+          
+          corners.forEach(corner => {
+            ctx.fillRect(
+              corner.x - handleSize / 2,
+              corner.y - handleSize / 2,
+              handleSize,
+              handleSize
+            );
+          });
+        }
       }
     }
     
     // Draw handles for selected annotation when not moving/resizing
     if (selectedAnnotationId && !isMoving && !isResizing) {
-      const selectedAnn = annotations.find(ann => ann.id === selectedAnnotationId && ann.frameIndex === currentFrame);
-      if (selectedAnn) {
-        ctx.fillStyle = '#FF6B6B';
+      const selectedBbox = boundingBoxes.find(bbox => {
+        const annotation = annotations.find(ann => ann.id === bbox.annotationId);
+        return annotation?.id === selectedAnnotationId && bbox.frameIndex === currentFrame;
+      });
+      
+      if (selectedBbox) {
+        
+        ctx.fillStyle = '#FF6B6B'; // Handles are always red for selected
         const handleSize = 8;
-        const { bboxX, bboxY, bboxWidth, bboxHeight } = selectedAnn;
+        const { bboxX, bboxY, bboxWidth, bboxHeight } = selectedBbox;
         const corners = [
           { x: bboxX, y: bboxY }, // nw
           { x: bboxX + bboxWidth, y: bboxY }, // ne
@@ -406,7 +471,7 @@ export default function VideoPlayer({
         });
       }
     }
-  }, [annotations, currentFrame, selectedAnnotationId, currentBBox, isMoving, isResizing, selectedAnnotation]);
+  }, [annotations, boundingBoxes, currentFrame, selectedAnnotationId, currentBBox, isMoving, isResizing, selectedBoundingBox]);
 
   // Clean up cursor on unmount
   useEffect(() => {

@@ -1,5 +1,5 @@
-import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, real, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { ColumnBaseConfig, ColumnDataType, sql } from "drizzle-orm";
+import { pgTable, text, varchar, integer, real, timestamp, jsonb, ExtraConfigColumn, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -44,18 +44,27 @@ export const annotations = pgTable("annotations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   folderId: varchar("folder_id").references(() => folders.id, { onDelete: "cascade" }).notNull(), // Required folder reference
   videoId: varchar("video_id").references(() => videos.id, { onDelete: "cascade" }), // Optional video reference
-  frameIndex: integer("frame_index"), // Optional - only for video-based annotations
-  frameTimestampMs: integer("frame_timestamp_ms"), // Optional - only for video-based annotations
-  gpsLat: real("gps_lat").notNull(), // Required - GPS coordinates for map display
-  gpsLon: real("gps_lon").notNull(), // Required - GPS coordinates for map display
+  label: text("label").notNull(),
+  gpsLat: real("gps_lat").notNull(),
+  gpsLon: real("gps_lon").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const boundingBoxes = pgTable("bounding_boxes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  annotationId: varchar("annotation_id").references(() => annotations.id, { onDelete: "cascade" }).notNull(),
+  frameIndex: integer("frame_index").notNull(),
+  frameTimestampMs: integer("frame_timestamp_ms").notNull(),
   bboxX: integer("bbox_x").notNull(),
   bboxY: integer("bbox_y").notNull(),
   bboxWidth: integer("bbox_width").notNull(),
   bboxHeight: integer("bbox_height").notNull(),
-  label: text("label").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  annotationFrameUnique: unique().on(table.annotationId, table.frameIndex),
+}));
 
 export const insertProjectSchema = createInsertSchema(projects).omit({
   id: true,
@@ -83,10 +92,12 @@ export const insertAnnotationSchema = createInsertSchema(annotations).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
-}).partial({
-  videoId: true,
-  frameIndex: true,
-  frameTimestampMs: true,
+});
+
+export const insertBoundingBoxSchema = createInsertSchema(boundingBoxes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
 });
 
 export type InsertProject = z.infer<typeof insertProjectSchema>;
@@ -99,6 +110,11 @@ export type InsertGpsData = z.infer<typeof insertGpsDataSchema>;
 export type GpsData = typeof gpsData.$inferSelect;
 export type InsertAnnotation = z.infer<typeof insertAnnotationSchema>;
 export type Annotation = typeof annotations.$inferSelect;
+export type InsertBoundingBox = z.infer<typeof insertBoundingBoxSchema>;
+export type BoundingBox = typeof boundingBoxes.$inferSelect;
+
+// Type pour annotation avec ses bounding boxes
+export type AnnotationWithBoundingBoxes = Annotation & { boundingBoxes: BoundingBox[] };
 
 // Additional types for the application
 export type GPSPoint = {
@@ -108,7 +124,8 @@ export type GPSPoint = {
   frameIndex?: number;
 };
 
-export type BoundingBox = {
+// Type pour représenter une bounding box individuelle
+export type BoundingBoxData = {
   x: number;
   y: number;
   width: number;
