@@ -212,10 +212,11 @@ export class PostgresStorage implements IStorage {
     const [folder] = await this.db.select().from(folders).where(eq(folders.id, folderId)).limit(1);
     if (!folder) return undefined;
 
-    const annotationsList = await this.getAnnotationsByFolderId(folderId);
+    // Utiliser le nouveau endpoint qui récupère annotations + bounding boxes
+    const annotationsWithBboxes = await this.getAnnotationsWithBoundingBoxesByFolderId(folderId);
     
     // Check if any annotations are linked to a video
-    const videoAnnotations = annotationsList.filter(ann => ann.videoId);
+    const videoAnnotations = annotationsWithBboxes.filter(ann => ann.videoId);
     let videoInfo = undefined;
     
     if (videoAnnotations.length > 0) {
@@ -235,21 +236,21 @@ export class PostgresStorage implements IStorage {
     
     return {
       video: videoInfo,
-      annotations: annotationsList.map(ann => ({
+      annotations: annotationsWithBboxes.map(ann => ({
         id: ann.id,
-        frame_index: ann.frameIndex !== null ? ann.frameIndex : undefined,
-        frame_timestamp_ms: ann.frameTimestampMs !== null ? ann.frameTimestampMs : undefined,
         gps: { lat: ann.gpsLat, lon: ann.gpsLon },
-        bbox: {
-          x: ann.bboxX,
-          y: ann.bboxY,
-          width: ann.bboxWidth,
-          height: ann.bboxHeight,
-          unit: "pixel"
-        },
         label: ann.label,
         created_at: ann.createdAt?.getTime() || Date.now(),
-        updated_at: ann.updatedAt?.getTime() || Date.now()
+        updated_at: ann.updatedAt?.getTime() || Date.now(),
+        boundingBoxes: ann.boundingBoxes.map(bbox => ({
+          frame_index: bbox.frameIndex,
+          frame_timestamp_ms: bbox.frameTimestampMs,
+          x: bbox.bboxX,
+          y: bbox.bboxY,
+          width: bbox.bboxWidth,
+          height: bbox.bboxHeight,
+          unit: "pixel"
+        }))
       }))
     };
   }
@@ -260,19 +261,44 @@ export class PostgresStorage implements IStorage {
     const annotationsToImport = data.annotations || (Array.isArray(data) ? data : []);
     
     for (const annData of annotationsToImport) {
+      // Créer d'abord l'annotation (sans les anciennes propriétés de bbox)
       const annotation: InsertAnnotation = {
         folderId: folderId,
-        frameIndex: annData.frame_index,
-        frameTimestampMs: annData.frame_timestamp_ms,
         gpsLat: annData.gps.lat,
         gpsLon: annData.gps.lon,
-        bboxX: annData.bbox.x,
-        bboxY: annData.bbox.y,
-        bboxWidth: annData.bbox.width,
-        bboxHeight: annData.bbox.height,
         label: annData.label
       };
-      await this.createAnnotation(annotation);
+      
+      const createdAnnotation = await this.createAnnotation(annotation);
+      
+      // Ensuite créer les bounding boxes associées
+      if (annData.boundingBoxes && Array.isArray(annData.boundingBoxes)) {
+        // Nouveau format avec multiples bounding boxes
+        for (const bboxData of annData.boundingBoxes) {
+          const boundingBox: InsertBoundingBox = {
+            annotationId: createdAnnotation.id,
+            frameIndex: bboxData.frame_index,
+            frameTimestampMs: bboxData.frame_timestamp_ms,
+            bboxX: bboxData.x,
+            bboxY: bboxData.y,
+            bboxWidth: bboxData.width,
+            bboxHeight: bboxData.height
+          };
+          await this.createBoundingBox(boundingBox);
+        }
+      } else if (annData.bbox) {
+        // Support de l'ancien format (rétrocompatibilité)
+        const boundingBox: InsertBoundingBox = {
+          annotationId: createdAnnotation.id,
+          frameIndex: annData.frame_index || 0,
+          frameTimestampMs: annData.frame_timestamp_ms || 0,
+          bboxX: annData.bbox.x,
+          bboxY: annData.bbox.y,
+          bboxWidth: annData.bbox.width,
+          bboxHeight: annData.bbox.height
+        };
+        await this.createBoundingBox(boundingBox);
+      }
     }
   }
 }

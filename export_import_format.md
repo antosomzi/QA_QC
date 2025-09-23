@@ -1,14 +1,12 @@
 # Format d'Import/Export des Annotations
 
-Ce document décrit le format d'import/export JSON utilisé pour les annotations dans l'application, qui prend en charge à la fois les annotations basées sur les vidéos et celles basées sur les dossiers.
+Ce document décrit le format d'import/export JSON utilisé pour les annotations dans l'application, qui prend en charge les annotations avec multiples bounding boxes par objet.
 
-## Format Unifié
+## Nouveau Format Unifié (Post-Migration)
 
-L'application utilise un format d'export unifié qui s'adapte automatiquement au type d'annotations :
+L'application utilise maintenant un format qui sépare les annotations (objets) des bounding boxes (positions rectangulaires) :
 
-### 1. Annotations avec Informations Vidéo
-
-Lorsque les annotations sont liées à une vidéo, l'export inclut les informations de la vidéo :
+### 1. Format d'Export
 
 ```json
 {
@@ -21,6 +19,90 @@ Lorsque les annotations sont liées à une vidéo, l'export inclut les informati
   "annotations": [
     {
       "id": "uuid-de-l-annotation",
+      "gps": { 
+        "lat": 34.12345, 
+        "lon": -118.12345 
+      },
+      "label": "Panneau de signalisation",
+      "created_at": 1234567890,
+      "updated_at": 1234567890,
+      "boundingBoxes": [
+        {
+          "frame_index": 123,
+          "frame_timestamp_ms": 123456,
+          "x": 100,
+          "y": 100,
+          "width": 200,
+          "height": 200,
+          "unit": "pixel"
+        },
+        {
+          "frame_index": 125,
+          "frame_timestamp_ms": 125000,
+          "x": 105,
+          "y": 102,
+          "width": 195,
+          "height": 198,
+          "unit": "pixel"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Caractéristiques :**
+- **1 Annotation** = 1 objet détecté à une position GPS fixe
+- **N BoundingBoxes** = Positions rectangulaires de cet objet sur différentes frames
+- Le champ `video` est présent avec toutes les informations de la vidéo (si applicable)
+- Les coordonnées GPS sont stockées au niveau de l'annotation
+- Chaque bounding box a ses propres coordonnées de frame
+
+### 2. Format d'Import
+
+Le format d'import supporte à la fois le nouveau format et l'ancien (rétrocompatibilité) :
+
+#### Nouveau Format (Recommandé)
+```json
+{
+  "annotations": [
+    {
+      "id": "uuid-de-l-annotation",  // Optionnel - généré si absent
+      "gps": { 
+        "lat": 34.12345, 
+        "lon": -118.12345 
+      },
+      "label": "Étiquette",
+      "boundingBoxes": [
+        {
+          "frame_index": 100,
+          "frame_timestamp_ms": 3333,
+          "x": 50,
+          "y": 50,
+          "width": 100,
+          "height": 100,
+          "unit": "pixel"
+        },
+        {
+          "frame_index": 105,
+          "frame_timestamp_ms": 3500,
+          "x": 55,
+          "y": 52,
+          "width": 98,
+          "height": 102,
+          "unit": "pixel"
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Ancien Format (Rétrocompatibilité)
+```json
+{
+  "annotations": [
+    {
       "frame_index": 123,
       "frame_timestamp_ms": 123456,
       "gps": { 
@@ -34,80 +116,7 @@ Lorsque les annotations sont liées à une vidéo, l'export inclut les informati
         "height": 200,
         "unit": "pixel"
       },
-      "label": "Panneau de signalisation",
-      "created_at": 1234567890,
-      "updated_at": 1234567890
-    }
-  ]
-}
-```
-
-**Caractéristiques :**
-- Le champ `video` est présent avec toutes les informations de la vidéo
-- Tous les champs d'annotation (`frame_index`, `frame_timestamp_ms`) sont remplis
-- Les coordonnées GPS proviennent des données GPS de la vidéo
-
-### 2. Annotations basées sur les dossiers uniquement
-
-Lorsque les annotations sont créées directement sur la carte sans vidéo :
-
-```json
-{
-  "annotations": [
-    {
-      "id": "uuid-de-l-annotation",
-      "gps": { 
-        "lat": 34.12345, 
-        "lon": -118.12345 
-      },
-      "bbox": {
-        "x": 100,
-        "y": 100,
-        "width": 200,
-        "height": 200,
-        "unit": "pixel"
-      },
-      "label": "Bâtiment",
-      "created_at": 1234567890,
-      "updated_at": 1234567890
-    }
-  ]
-}
-```
-
-**Caractéristiques :**
-- Le champ `video` est absent
-- Les champs `frame_index` et `frame_timestamp_ms` sont absents
-- Les coordonnées GPS sont définies manuellement lors de la création
-
-## Format d'Import
-
-Le format d'import est flexible et ne considère que le tableau d'annotations :
-
-```json
-{
-  "video": {
-    // Optionnel - ignoré lors de l'import
-  },
-  "annotations": [
-    {
-      "id": "uuid-de-l-annotation",  // Optionnel - généré si absent
-      "frame_index": 123,            // Optionnel - pour annotations vidéo
-      "frame_timestamp_ms": 123456,  // Optionnel - pour annotations vidéo
-      "gps": { 
-        "lat": 34.12345, 
-        "lon": -118.12345 
-      },
-      "bbox": {
-        "x": 100,
-        "y": 100,
-        "width": 200,
-        "height": 200,
-        "unit": "pixel"
-      },
-      "label": "Étiquette",
-      "created_at": 1234567890,      // Optionnel
-      "updated_at": 1234567890       // Optionnel
+      "label": "Panneau de signalisation"
     }
   ]
 }

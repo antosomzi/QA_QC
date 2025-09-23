@@ -143,18 +143,18 @@ export type AnnotationExport = {
   video?: VideoInfo;
   annotations: Array<{
     id: string;
-    frame_index?: number;
-    frame_timestamp_ms?: number;
     gps: { lat: number; lon: number };
-    bbox: {
+    label: string;
+    created_at: number;
+    updated_at: number;
+    boundingBoxes: Array<{
+      frame_index: number;
+      frame_timestamp_ms: number;
       x: number;
       y: number;
       width: number;
       height: number;
       unit: "pixel";
-    };
-    label: string;
-    created_at: number;
-    updated_at: number;
+    }>;
   }>;
 };
