@@ -107,7 +107,7 @@ export default function MapPanel({
         marker.setLatLng([annotation.gpsLat, annotation.gpsLon]);
       }
       
-      // Update marker style based on selection
+      // Update marker style based on selection - Keep same color, no red highlight
       const isSelected = annotation.id === selectedAnnotationId;
       const markerColor = getAnnotationColor(annotations, annotation.id);
       const icon = window.L.divIcon({
@@ -116,7 +116,7 @@ export default function MapPanel({
           width: 20px; 
           height: 20px; 
           border-radius: 50%; 
-          background-color: ${isSelected ? '#FF6B6B' : markerColor}; 
+          background-color: ${markerColor}; 
           border: 2px solid white;
           box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         "></div>`,
@@ -148,11 +148,13 @@ export default function MapPanel({
       if (annotation && marker) {
         // Zoom IN to level 18 and center on the selected marker (more zoomed)
         map.setView([annotation.gpsLat, annotation.gpsLon], 18);
-        // Don't open popup automatically - it's annoying
-        // marker.openPopup();
+        // Open popup automatically when annotation is selected from list
+        marker.openPopup();
       }
     } else {
-      // When no annotation is selected, zoom OUT to show all markers (corrected logic)
+      // When no annotation is selected, close all popups and zoom out
+      map.closePopup();
+      
       if (annotations.length > 0) {
         // Fit bounds to show all markers
         const markers = markersRef.current;

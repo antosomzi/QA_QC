@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Edit, Trash2 } from "lucide-react";
 import type { Annotation } from "@shared/schema";
-import { getAnnotationCSSColor } from "./helpers/video-player-helpers";
+import { getAnnotationCSSColor, getAnnotationIndex, getAnnotationHexColor } from "./helpers/video-player-helpers";
 
 interface AnnotationListProps {
   annotations: Annotation[];
@@ -148,18 +148,31 @@ export default function AnnotationList({
             <p className="text-xs mt-1">Draw bounding boxes on the video to create annotations</p>
           </div>
         ) : (
-          annotations.map((annotation, index) => (
+          annotations.map((annotation) => {
+            const annotationIndex = getAnnotationIndex(annotations, annotation.id);
+            const annotationColor = getAnnotationHexColor(annotationIndex);
+            return (
             <div
               key={annotation.id}
               className={`bg-card p-3 rounded-md border border-border hover:bg-accent/50 cursor-pointer transition-colors ${
                 annotation.id === selectedAnnotationId ? 'ring-2 ring-primary' : ''
               }`}
-              onClick={() => onAnnotationSelect(annotation.id)}
+              onClick={() => {
+                // Si l'annotation est déjà sélectionnée, la désélectionner
+                if (annotation.id === selectedAnnotationId) {
+                  onAnnotationSelect(null);
+                } else {
+                  onAnnotationSelect(annotation.id);
+                }
+              }}
               data-testid={`annotation-item-${annotation.id}`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  <div className={`w-2 h-2 ${getAnnotationCSSColor(index)} rounded-full`}></div>
+                  <div 
+                    className="w-2 h-2 rounded-full" 
+                    style={{ backgroundColor: annotationColor }}
+                  ></div>
                   <div>
                     <p className="text-sm font-medium" data-testid={`text-annotation-label-${annotation.id}`}>
                       {annotation.label}
@@ -211,7 +224,8 @@ export default function AnnotationList({
                 {formatCoordinate(annotation.gpsLat, true)}, {formatCoordinate(annotation.gpsLon, false)}
               </div>
             </div>
-          ))
+            );
+          })
         )}
       </div>
     </>
