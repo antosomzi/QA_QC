@@ -14,6 +14,7 @@ interface MapPanelProps {
   selectedAnnotationId?: string | null;
   onAnnotationSelect: (id: string | null) => void;
   onMarkerMove: (id: string, updates: { gpsLat: number; gpsLon: number }) => void;
+  shouldZoomToSelection?: boolean; // New prop to control zoom behavior
 }
 
 export default function MapPanel({
@@ -21,6 +22,7 @@ export default function MapPanel({
   selectedAnnotationId,
   onAnnotationSelect,
   onMarkerMove,
+  shouldZoomToSelection = true,
 }: MapPanelProps) {
   const mapRef = useRef<any>(null);
   const markersRef = useRef<Map<string, any>>(new Map());
@@ -89,11 +91,14 @@ export default function MapPanel({
         `);
         
         marker.on('click', () => {
+          // Select annotation from marker click
           onAnnotationSelect(annotation.id);
         });
         
         marker.on('dragend', () => {
           const pos = marker.getLatLng();
+          // Select the annotation when drag ends and update position
+          onAnnotationSelect(annotation.id);
           onMarkerMove(annotation.id, {
             gpsLat: pos.lat,
             gpsLon: pos.lng
@@ -103,27 +108,13 @@ export default function MapPanel({
         marker.addTo(map);
         markers.set(annotation.id, marker);
       } else {
-        // Update existing marker position
-        marker.setLatLng([annotation.gpsLat, annotation.gpsLon]);
+        // Update existing marker position if it has changed
+        const currentLatLng = marker.getLatLng();
+        if (Math.abs(currentLatLng.lat - annotation.gpsLat) > 0.000001 || 
+            Math.abs(currentLatLng.lng - annotation.gpsLon) > 0.000001) {
+          marker.setLatLng([annotation.gpsLat, annotation.gpsLon]);
+        }
       }
-      
-      // Update marker style based on selection - Keep same color, no red highlight
-      const isSelected = annotation.id === selectedAnnotationId;
-      const markerColor = getAnnotationColor(annotations, annotation.id);
-      const icon = window.L.divIcon({
-        className: `custom-marker ${isSelected ? 'selected' : ''}`,
-        html: `<div style="
-          width: 20px; 
-          height: 20px; 
-          border-radius: 50%; 
-          background-color: ${markerColor}; 
-          border: 2px solid white;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        "></div>`,
-        iconSize: [20, 20],
-        iconAnchor: [10, 10]
-      });
-      marker.setIcon(icon);
     });
 
     // Set initial view only when map is first loaded and there are annotations
@@ -133,7 +124,37 @@ export default function MapPanel({
       map.fitBounds(group.getBounds().pad(0.1));
       map.hasInitialViewSet = true;
     }
-  }, [annotations, selectedAnnotationId, onAnnotationSelect, onMarkerMove]);
+  }, [annotations, onAnnotationSelect, onMarkerMove]);
+
+  // Update marker styles when selection changes (separate effect to avoid unnecessary recreations)
+  useEffect(() => {
+    if (!mapRef.current || typeof window.L === 'undefined') return;
+
+    const markers = markersRef.current;
+    
+    // Update marker style based on selection
+    annotations.forEach(annotation => {
+      const marker = markers.get(annotation.id);
+      if (marker) {
+        const isSelected = annotation.id === selectedAnnotationId;
+        const markerColor = getAnnotationColor(annotations, annotation.id);
+        const icon = window.L.divIcon({
+          className: `custom-marker ${isSelected ? 'selected' : ''}`,
+          html: `<div style="
+            width: 20px; 
+            height: 20px; 
+            border-radius: 50%; 
+            background-color: ${markerColor}; 
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+          "></div>`,
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
+        });
+        marker.setIcon(icon);
+      }
+    });
+  }, [annotations, selectedAnnotationId]);
 
   // Focus on selected annotation
   useEffect(() => {
@@ -146,17 +167,22 @@ export default function MapPanel({
       const marker = markersRef.current.get(selectedAnnotationId);
       
       if (annotation && marker) {
-        // Zoom IN to level 18 and center on the selected marker (more zoomed)
-        map.setView([annotation.gpsLat, annotation.gpsLon], 18);
-        // Open popup automatically when annotation is selected from list
-        marker.openPopup();
+        // Only zoom if shouldZoomToSelection is true (from external selection)
+        if (shouldZoomToSelection) {
+          // Zoom IN to level 18 and center on the selected marker (more zoomed)
+          map.setView([annotation.gpsLat, annotation.gpsLon], 16);
+          // Open popup when selection comes from annotation list
+          marker.openPopup();
+        }
+        
+        // Don't open popup for marker clicks/drags (shouldZoomToSelection = false)
       }
     } else {
       // When no annotation is selected, close all popups and zoom out
       map.closePopup();
       
-      if (annotations.length > 0) {
-        // Fit bounds to show all markers
+      if (annotations.length > 0 && shouldZoomToSelection) {
+        // Fit bounds to show all markers (only if zoom is enabled)
         const markers = markersRef.current;
         if (markers.size > 0) {
           // Get all markers and fit bounds
@@ -167,7 +193,7 @@ export default function MapPanel({
         }
       }
     }
-  }, [selectedAnnotationId, annotations]);
+  }, [selectedAnnotationId, annotations, shouldZoomToSelection]);
 
   return (
     <div className="w-full h-full relative">

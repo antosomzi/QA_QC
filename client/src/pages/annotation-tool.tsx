@@ -17,9 +17,22 @@ export default function AnnotationTool() {
   const params = useParams();
   const folderId = params.folderId as string;
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  const [shouldZoomToSelection, setShouldZoomToSelection] = useState<boolean>(true);
   const [currentFrame, setCurrentFrame] = useState(0);
   const [viewMode, setViewMode] = useState<"video" | "map">("video");
   const { toast } = useToast();
+
+  // Function to handle selection from annotation list (with zoom)
+  const handleAnnotationListSelection = useCallback((id: string | null) => {
+    setShouldZoomToSelection(true);
+    setSelectedAnnotationId(id);
+  }, []);
+
+  // Function to handle selection from map (without zoom)
+  const handleMapSelection = useCallback((id: string | null) => {
+    setShouldZoomToSelection(false);
+    setSelectedAnnotationId(id);
+  }, []);
 
   // Fetch folder data to get project ID for back navigation
   const { data: folder } = useQuery({
@@ -97,6 +110,10 @@ export default function AnnotationTool() {
       await apiRequest("POST", "/api/bounding-boxes", fullBoundingBoxData);
       
       refetchAnnotations();
+      
+      // Select the newly created annotation with zoom (like from annotation list)
+      handleAnnotationListSelection(createdAnnotation.id);
+      
       toast({
         title: "Annotation created",
         description: "New annotation has been added to the folder.",
@@ -318,7 +335,7 @@ export default function AnnotationTool() {
                   onAnnotationUpdate={handleAnnotationUpdate}
                   onBoundingBoxUpdate={handleBoundingBoxUpdate}
                   selectedAnnotationId={selectedAnnotationId}
-                  onAnnotationSelect={setSelectedAnnotationId}
+                  onAnnotationSelect={handleAnnotationListSelection}
                   folderId={folderId}
                 />
             ) :(
@@ -332,8 +349,9 @@ export default function AnnotationTool() {
                 <MapPanel
                   annotations={annotations}
                   selectedAnnotationId={selectedAnnotationId}
-                  onAnnotationSelect={setSelectedAnnotationId}
+                  onAnnotationSelect={handleMapSelection}
                   onMarkerMove={handleAnnotationUpdate}
+                  shouldZoomToSelection={shouldZoomToSelection}
                 />
               </div>
               
@@ -341,7 +359,7 @@ export default function AnnotationTool() {
                 <AnnotationList
                   annotations={annotations}
                   selectedAnnotationId={selectedAnnotationId}
-                  onAnnotationSelect={setSelectedAnnotationId}
+                  onAnnotationSelect={handleAnnotationListSelection}
                   onAnnotationUpdate={handleAnnotationUpdate}
                   onAnnotationDelete={handleAnnotationDelete}
                 />

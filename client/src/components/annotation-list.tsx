@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Edit, Trash2 } from "lucide-react";
 import type { Annotation } from "@shared/schema";
-import { getAnnotationCSSColor, getAnnotationIndex, getAnnotationHexColor } from "./helpers/video-player-helpers";
+import { getAnnotationCSSColor, getAnnotationIndex, getAnnotationHexColor, getAnnotationColor } from "./helpers/video-player-helpers";
 
 interface AnnotationListProps {
   annotations: Annotation[];
@@ -149,8 +149,7 @@ export default function AnnotationList({
           </div>
         ) : (
           annotations.map((annotation) => {
-            const annotationIndex = getAnnotationIndex(annotations, annotation.id);
-            const annotationColor = getAnnotationHexColor(annotationIndex);
+            const annotationColor = getAnnotationColor(annotations, annotation.id);
             return (
             <div
               key={annotation.id}

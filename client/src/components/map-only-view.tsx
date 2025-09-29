@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import MapPanel from "./map-panel";
 import AnnotationList from "./annotation-list";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,19 @@ export default function MapOnlyView({
   onBackToVideoView,
 }: MapOnlyViewProps) {
   const [showAnnotationsPanel, setShowAnnotationsPanel] = useState(true);
+  const [shouldZoomToSelection, setShouldZoomToSelection] = useState<boolean>(true);
+
+  // Function to handle selection from annotation list (with zoom)
+  const handleAnnotationListSelection = useCallback((id: string | null) => {
+    setShouldZoomToSelection(true);
+    onAnnotationSelect(id);
+  }, [onAnnotationSelect]);
+
+  // Function to handle selection from map (without zoom)
+  const handleMapSelection = useCallback((id: string | null) => {
+    setShouldZoomToSelection(false);
+    onAnnotationSelect(id);
+  }, [onAnnotationSelect]);
 
   return (
     <div className="flex h-full w-full bg-background">
@@ -32,8 +45,9 @@ export default function MapOnlyView({
           <MapPanel
             annotations={annotations}
             selectedAnnotationId={selectedAnnotationId}
-            onAnnotationSelect={onAnnotationSelect}
+            onAnnotationSelect={handleMapSelection}
             onMarkerMove={onAnnotationUpdate}
+            shouldZoomToSelection={shouldZoomToSelection}
           />
         </div>
         
@@ -99,7 +113,7 @@ export default function MapOnlyView({
                 <AnnotationList
                   annotations={annotations}
                   selectedAnnotationId={selectedAnnotationId}
-                  onAnnotationSelect={onAnnotationSelect}
+                  onAnnotationSelect={handleAnnotationListSelection}
                   onAnnotationUpdate={onAnnotationUpdate}
                   onAnnotationDelete={onAnnotationDelete}
                 />

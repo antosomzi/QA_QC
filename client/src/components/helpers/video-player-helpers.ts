@@ -136,11 +136,21 @@ export function getAnnotationIndex(annotations: Annotation[], annotationId: stri
 }
 
 /**
- * Get annotation color (hex) by annotation ID - convenience function
+ * Get consistent color for an annotation based on its ID (not index)
+ * This ensures the color doesn't change when annotations are reordered
  */
 export function getAnnotationColor(annotations: Annotation[], annotationId: string): string {
-  const index = getAnnotationIndex(annotations, annotationId);
-  return getAnnotationHexColor(index);
+  // Use a simple hash of the annotation ID to get a consistent color
+  let hash = 0;
+  for (let i = 0; i < annotationId.length; i++) {
+    const char = annotationId.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  
+  // Use absolute value to ensure positive index
+  const colorIndex = Math.abs(hash) % 5;
+  return getAnnotationHexColor(colorIndex);
 }
 
 /**
