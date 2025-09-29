@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
 import { getGPSForFrame } from "@/lib/gps-utils";
@@ -74,6 +74,11 @@ export default function VideoPlayer({
   const [moveStart, setMoveStart] = useState<{ x: number; y: number } | null>(null);
   const [selectedBoundingBox, setSelectedBoundingBox] = useState<BoundingBox | null>(null);
 
+  // Memoize bounding boxes for current frame to avoid unnecessary re-renders
+  const currentFrameBoundingBoxes = useMemo(() => {
+    return boundingBoxes.filter(bbox => bbox.frameIndex === currentFrame);
+  }, [boundingBoxes, currentFrame]);
+
   // Handle video time updates - source de vérité unique
   const handleTimeUpdate = useCallback(() => {
     // Ignorer les mises à jour pendant la navigation manuelle
@@ -148,6 +153,21 @@ export default function VideoPlayer({
   const getCanvasCoordinatesLocal = useCallback((e: React.MouseEvent) => {
     return getCanvasCoordinates(e, canvasRef);
   }, []);
+
+  // Reset selectedBoundingBox when optimistic update has synchronized the data
+  useEffect(() => {
+    if (selectedBoundingBox && !isMoving && !isResizing) {
+      const updatedBbox = boundingBoxes.find(bbox => bbox.id === selectedBoundingBox.id);
+      if (updatedBbox && 
+          updatedBbox.bboxX === selectedBoundingBox.bboxX &&
+          updatedBbox.bboxY === selectedBoundingBox.bboxY &&
+          updatedBbox.bboxWidth === selectedBoundingBox.bboxWidth &&
+          updatedBbox.bboxHeight === selectedBoundingBox.bboxHeight) {
+        // The optimistic update has synchronized, we can now clear selectedBoundingBox
+        setSelectedBoundingBox(null);
+      }
+    }
+  }, [boundingBoxes, selectedBoundingBox, isMoving, isResizing]);
 
   const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
     if (!gpsData) return;
@@ -369,29 +389,27 @@ export default function VideoPlayer({
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // Draw existing bounding boxes for current frame
-    boundingBoxes
-      .filter(bbox => bbox.frameIndex === currentFrame)
-      .forEach(bbox => {
-        // Find the corresponding annotation to get the label
-        const annotation = annotations.find(ann => ann.id === bbox.annotationId);
-        if (!annotation) return;
-        
-        // Skip drawing the selected bounding box if it's being moved/resized (we'll draw it separately)
-        if ((isMoving || isResizing) && bbox.id === selectedBoundingBox?.id) return;
-        
-        // Get consistent color for this annotation
-        const annotationColor = getAnnotationColor(annotations, annotation.id);
-        const isSelected = annotation.id === selectedAnnotationId;
-        
-        ctx.strokeStyle = isSelected ? '#FF6B6B' : annotationColor; // Red for selected, unique color otherwise
-        ctx.lineWidth = isSelected ? 6 : 4; // Thicker line for selected
-        ctx.strokeRect(bbox.bboxX, bbox.bboxY, bbox.bboxWidth, bbox.bboxHeight);
-        
-        // Draw label
-        ctx.fillStyle = isSelected ? '#FF6B6B' : annotationColor;
-        ctx.font = isSelected ? 'bold 14px Inter' : '14px Inter';
-        ctx.fillText(annotation.label, bbox.bboxX, bbox.bboxY - 5);
-      });
+    currentFrameBoundingBoxes.forEach(bbox => {
+      // Find the corresponding annotation to get the label
+      const annotation = annotations.find(ann => ann.id === bbox.annotationId);
+      if (!annotation) return;
+      
+      // Use selectedBoundingBox if it exists for this bbox (for smooth transition during/after moves)
+      const bboxToRender = (selectedBoundingBox && bbox.id === selectedBoundingBox.id) ? selectedBoundingBox : bbox;
+      
+      // Get consistent color for this annotation
+      const annotationColor = getAnnotationColor(annotations, annotation.id);
+      const isSelected = annotation.id === selectedAnnotationId;
+      
+      ctx.strokeStyle = isSelected ? '#FF6B6B' : annotationColor; // Red for selected, unique color otherwise
+      ctx.lineWidth = isSelected ? 6 : 4; // Thicker line for selected
+      ctx.strokeRect(bboxToRender.bboxX, bboxToRender.bboxY, bboxToRender.bboxWidth, bboxToRender.bboxHeight);
+      
+      // Draw label
+      ctx.fillStyle = isSelected ? '#FF6B6B' : annotationColor;
+      ctx.font = isSelected ? 'bold 14px Inter' : '14px Inter';
+      ctx.fillText(annotation.label, bboxToRender.bboxX, bboxToRender.bboxY - 5);
+    });
     
     // Draw current bounding box being drawn
     if (currentBBox) {
@@ -444,9 +462,9 @@ export default function VideoPlayer({
     
     // Draw handles for selected annotation when not moving/resizing
     if (selectedAnnotationId && !isMoving && !isResizing) {
-      const selectedBbox = boundingBoxes.find(bbox => {
+      const selectedBbox = currentFrameBoundingBoxes.find(bbox => {
         const annotation = annotations.find(ann => ann.id === bbox.annotationId);
-        return annotation?.id === selectedAnnotationId && bbox.frameIndex === currentFrame;
+        return annotation?.id === selectedAnnotationId;
       });
       
       if (selectedBbox) {
@@ -471,7 +489,7 @@ export default function VideoPlayer({
         });
       }
     }
-  }, [annotations, boundingBoxes, currentFrame, selectedAnnotationId, currentBBox, isMoving, isResizing, selectedBoundingBox]);
+  }, [annotations, currentFrameBoundingBoxes, selectedAnnotationId, currentBBox, isMoving, isResizing, selectedBoundingBox]);
 
   // Clean up cursor on unmount
   useEffect(() => {

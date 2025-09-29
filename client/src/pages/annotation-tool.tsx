@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { Link } from "wouter";
@@ -9,7 +9,7 @@ import FileUpload from "@/components/file-upload";
 import MapOnlyView from "@/components/map-only-view";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ArrowLeft, Map, Video } from "lucide-react";
 import type { Video as VideoType, GpsData, Annotation, AnnotationWithBoundingBoxes, BoundingBox } from "@shared/schema";
 
@@ -72,8 +72,13 @@ export default function AnnotationTool() {
   });
 
   // Extract annotations and bounding boxes from the combined data
-  const annotations: Annotation[] = annotationsWithBboxes.map(({ boundingBoxes, ...annotation }) => annotation);
-  const boundingBoxes: BoundingBox[] = annotationsWithBboxes.flatMap(annotation => annotation.boundingBoxes);
+  const annotations: Annotation[] = useMemo(() => {
+    return annotationsWithBboxes.map(({ boundingBoxes, ...annotation }) => annotation);
+  }, [annotationsWithBboxes]);
+  
+  const boundingBoxes: BoundingBox[] = useMemo(() => {
+    return annotationsWithBboxes.flatMap(annotation => annotation.boundingBoxes);
+  }, [annotationsWithBboxes]);
 
   const handleVideoUpload = useCallback((videoId: string) => {
     toast({
@@ -129,37 +134,79 @@ export default function AnnotationTool() {
 
   const handleAnnotationUpdate = useCallback(async (id: string, updates: Partial<Annotation>) => {
     try {
+      // Get current data from the cache to avoid stale closures
+      const currentAnnotationsWithBboxes = queryClient.getQueryData<AnnotationWithBoundingBoxes[]>(
+        ["folder-annotations-with-bboxes", folderId]
+      ) || [];
+      
+      // Optimistic update: Update local data immediately
+      const optimisticAnnotations = currentAnnotationsWithBboxes.map(ann => 
+        ann.id === id ? { ...ann, ...updates } : ann
+      );
+      
+      // Update the cache optimistically
+      queryClient.setQueryData(["folder-annotations-with-bboxes", folderId], optimisticAnnotations);
+
+      // Make the API call
       await apiRequest("PUT", `/api/annotations/${id}`, updates);
-      refetchAnnotations();
+      
       toast({
         title: "Annotation updated",
         description: "Annotation has been successfully updated.",
       });
     } catch (error) {
+      // On error, refetch to restore correct state
+      refetchAnnotations();
       toast({
         title: "Error",
         description: "Failed to update annotation.",
         variant: "destructive",
       });
     }
-  }, [refetchAnnotations, toast]);
+  }, [folderId, refetchAnnotations, toast, queryClient]);
 
   const handleBoundingBoxUpdate = useCallback(async (id: string, updates: Partial<BoundingBox>) => {
     try {
+      // Get current data from the cache to avoid stale closures
+      const currentAnnotationsWithBboxes = queryClient.getQueryData<AnnotationWithBoundingBoxes[]>(
+        ["folder-annotations-with-bboxes", folderId]
+      ) || [];
+      
+      // Optimistic update: only update the specific bounding box
+      const optimisticAnnotations = currentAnnotationsWithBboxes.map(ann => {
+        const hasBboxToUpdate = ann.boundingBoxes.some(bbox => bbox.id === id);
+        if (!hasBboxToUpdate) {
+          return ann; // Return same reference if no change needed
+        }
+        
+        return {
+          ...ann,
+          boundingBoxes: ann.boundingBoxes.map(bbox => 
+            bbox.id === id ? { ...bbox, ...updates } : bbox
+          )
+        };
+      });
+      
+      // Update the cache optimistically
+      queryClient.setQueryData(["folder-annotations-with-bboxes", folderId], optimisticAnnotations);
+
+      // Make the API call
       await apiRequest("PUT", `/api/bounding-boxes/${id}`, updates);
-      refetchAnnotations(); // This will also refetch bounding boxes since they're fetched together
+      
       toast({
         title: "Bounding box updated",
         description: "Bounding box has been successfully updated.",
       });
     } catch (error) {
+      // On error, refetch to restore correct state
+      refetchAnnotations();
       toast({
         title: "Error",
         description: "Failed to update bounding box.",
         variant: "destructive",
       });
     }
-  }, [refetchAnnotations, toast]);
+  }, [folderId, refetchAnnotations, toast, queryClient]);
 
   const handleAnnotationDelete = useCallback(async (id: string) => {
     try {
