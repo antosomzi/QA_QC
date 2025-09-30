@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 import { getGPSForFrame } from "@/lib/gps-utils";
 import { 
   getCanvasCoordinates, 
@@ -62,6 +62,7 @@ export default function VideoPlayer({
   const containerRef = useRef<HTMLDivElement>(null);
   
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -101,6 +102,8 @@ export default function VideoPlayer({
   const handleLoadedMetadata = useCallback(() => {
     if (videoRef.current) {
       setDuration(videoRef.current.duration);
+      // Sync mute state with video element
+      setIsMuted(videoRef.current.muted);
     }
   }, []);
 
@@ -115,6 +118,14 @@ export default function VideoPlayer({
       setIsPlaying(!isPlaying);
     }
   }, [isPlaying]);
+
+  // Mute/unmute controls
+  const toggleMute = useCallback(() => {
+    if (videoRef.current) {
+      videoRef.current.muted = !isMuted;
+      setIsMuted(!isMuted);
+    }
+  }, [isMuted]);
 
   // Fonction helper pour la navigation frame par frame avec correction du décalage
   const navigateToFrame = useCallback((targetFrame: number) => {
@@ -543,6 +554,15 @@ export default function VideoPlayer({
               data-testid="button-play-pause"
             >
               {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            </Button>
+            <Button
+              onClick={toggleMute}
+              size="sm"
+              className="p-2"
+              variant="outline"
+              data-testid="button-mute"
+            >
+              {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </Button>
             <span className="text-sm text-muted-foreground" data-testid="text-current-time">
               {formatTime(currentTime)}
