@@ -37,6 +37,17 @@ interface VideoPlayerProps {
       bboxHeight: number;
     }
   ) => void;
+  onBoundingBoxCreate: (
+    annotationId: string,
+    boundingBoxData: {
+      frameIndex: number;
+      frameTimestampMs: number;
+      bboxX: number;
+      bboxY: number;
+      bboxWidth: number;
+      bboxHeight: number;
+    }
+  ) => void;
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void;
   onBoundingBoxUpdate: (id: string, updates: Partial<BoundingBox>) => void;
   selectedAnnotationId?: string | null;
@@ -52,6 +63,7 @@ export default function VideoPlayer({
   currentFrame,
   onFrameChange,
   onAnnotationCreate,
+  onBoundingBoxCreate,
   onBoundingBoxUpdate,
   selectedAnnotationId,
   onAnnotationSelect,
@@ -330,36 +342,57 @@ export default function VideoPlayer({
       // Check if the bounding box has minimum size (avoid point-like boxes)
       const minSize = 10;
       if (currentBBox.width >= minSize && currentBBox.height >= minSize) {
-        // Create new annotation with bounding box only if it's big enough
-        const gpsPoint = getGPSForFrame(gpsData.data as any[], currentFrame, video.fps);
-        if (!gpsPoint) {
-          console.warn("No GPS data available for current frame");
-          setIsDrawing(false);
-          setDrawStart(null);
-          setCurrentBBox(null);
-          return;
+        
+        // Check if there's a selected annotation and no bounding box for it on the current frame
+        const selectedAnnotation = selectedAnnotationId ? annotations.find(ann => ann.id === selectedAnnotationId) : null;
+        const hasSelectedAnnotationBboxOnCurrentFrame = selectedAnnotation ? 
+          boundingBoxes.some(bbox => bbox.annotationId === selectedAnnotation.id && bbox.frameIndex === currentFrame) : 
+          false;
+        
+        if (selectedAnnotation && !hasSelectedAnnotationBboxOnCurrentFrame) {
+          // Add a bounding box to the existing selected annotation
+          const boundingBoxData = {
+            frameIndex: currentFrame,
+            frameTimestampMs: Math.floor(currentTime * 1000),
+            bboxX: Math.round(currentBBox.x),
+            bboxY: Math.round(currentBBox.y),
+            bboxWidth: Math.round(currentBBox.width),
+            bboxHeight: Math.round(currentBBox.height),
+          };
+
+          onBoundingBoxCreate(selectedAnnotation.id, boundingBoxData);
+        } else {
+          // Create a new annotation with bounding box
+          const gpsPoint = getGPSForFrame(gpsData.data as any[], currentFrame, video.fps);
+          if (!gpsPoint) {
+            console.warn("No GPS data available for current frame");
+            setIsDrawing(false);
+            setDrawStart(null);
+            setCurrentBBox(null);
+            return;
+          }
+
+          // Prepare the data for both annotation and bounding box
+          const annotationData = {
+            folderId: folderId,
+            videoId: video.id,
+            label: "New Annotation",
+            gpsLat: gpsPoint.lat,
+            gpsLon: gpsPoint.lon,
+          };
+
+          const boundingBoxData = {
+            frameIndex: currentFrame,
+            frameTimestampMs: Math.floor(currentTime * 1000),
+            bboxX: Math.round(currentBBox.x),
+            bboxY: Math.round(currentBBox.y),
+            bboxWidth: Math.round(currentBBox.width),
+            bboxHeight: Math.round(currentBBox.height),
+          };
+
+          // Call the function with separated data
+          onAnnotationCreate(annotationData, boundingBoxData);
         }
-
-        // Prepare the data for both annotation and bounding box
-        const annotationData = {
-          folderId: folderId,
-          videoId: video.id,
-          label: "New Annotation",
-          gpsLat: gpsPoint.lat,
-          gpsLon: gpsPoint.lon,
-        };
-
-        const boundingBoxData = {
-          frameIndex: currentFrame,
-          frameTimestampMs: Math.floor(currentTime * 1000),
-          bboxX: Math.round(currentBBox.x),
-          bboxY: Math.round(currentBBox.y),
-          bboxWidth: Math.round(currentBBox.width),
-          bboxHeight: Math.round(currentBBox.height),
-        };
-
-        // Call the function with separated data
-        onAnnotationCreate(annotationData, boundingBoxData);
       } else {
         // If the box is too small (like a simple click), deselect instead
         onAnnotationSelect(null);
@@ -386,7 +419,7 @@ export default function VideoPlayer({
     setCurrentBBox(null);
     setMoveStart(null);
     setResizeHandle(null);
-  }, [isDrawing, currentBBox, gpsData, video, currentFrame, currentTime, onAnnotationCreate, folderId, isMoving, isResizing, selectedBoundingBox, onBoundingBoxUpdate, getCanvasCoordinatesLocal, onAnnotationSelect]);
+  }, [isDrawing, currentBBox, gpsData, video, currentFrame, currentTime, onAnnotationCreate, onBoundingBoxCreate, folderId, isMoving, isResizing, selectedBoundingBox, onBoundingBoxUpdate, getCanvasCoordinatesLocal, onAnnotationSelect, selectedAnnotationId, annotations, boundingBoxes]);
 
   // Draw annotations on canvas
   useEffect(() => {

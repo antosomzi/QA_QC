@@ -130,7 +130,46 @@ export default function AnnotationTool() {
         variant: "destructive",
       });
     }
-  }, [refetchAnnotations, toast]);
+  }, [refetchAnnotations, toast, handleAnnotationListSelection]);
+
+  const handleBoundingBoxCreate = useCallback(async (
+    annotationId: string,
+    boundingBoxData: {
+      frameIndex: number;
+      frameTimestampMs: number;
+      bboxX: number;
+      bboxY: number;
+      bboxWidth: number;
+      bboxHeight: number;
+    }
+  ) => {
+    try {
+      // Create the bounding box for the existing annotation
+      const fullBoundingBoxData = {
+        annotationId,
+        ...boundingBoxData
+      };
+      
+      // Create the bounding box
+      await apiRequest("POST", "/api/bounding-boxes", fullBoundingBoxData);
+      
+      // Invalidate the query to trigger automatic refetch
+      queryClient.invalidateQueries({ 
+        queryKey: ["folder-annotations-with-bboxes", folderId] 
+      });
+      
+      toast({
+        title: "Bounding box added",
+        description: "New bounding box has been added to the annotation.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to create bounding box.",
+        variant: "destructive",
+      });
+    }
+  }, [folderId, toast, queryClient]);
 
   const handleAnnotationUpdate = useCallback(async (id: string, updates: Partial<Annotation>) => {
     try {
@@ -379,6 +418,7 @@ export default function AnnotationTool() {
                   currentFrame={currentFrame}
                   onFrameChange={setCurrentFrame}
                   onAnnotationCreate={handleAnnotationCreate}
+                  onBoundingBoxCreate={handleBoundingBoxCreate}
                   onAnnotationUpdate={handleAnnotationUpdate}
                   onBoundingBoxUpdate={handleBoundingBoxUpdate}
                   selectedAnnotationId={selectedAnnotationId}
