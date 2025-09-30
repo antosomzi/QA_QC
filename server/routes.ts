@@ -374,6 +374,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete("/api/bounding-boxes/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteBoundingBox(req.params.id);
+      if (!success) {
+        return res.status(404).json({ message: "Bounding box not found" });
+      }
+      res.json({ message: "Bounding box deleted successfully" });
+    } catch (error) {
+      res.status(500).json({ message: error instanceof Error ? error.message : "Failed to delete bounding box" });
+    }
+  });
+
   app.get("/api/annotations/folder/:folderId", async (req, res) => {
     try {
       const annotations = await storage.getAnnotationsByFolderId(req.params.folderId);

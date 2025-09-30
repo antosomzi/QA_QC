@@ -5,6 +5,7 @@ import { Link } from "wouter";
 import VideoPlayer from "@/components/video-player";
 import MapPanel from "@/components/map-panel";
 import AnnotationList from "@/components/annotation-list";
+import BoundingBoxList from "@/components/bounding-box-list";
 import FileUpload from "@/components/file-upload";
 import MapOnlyView from "@/components/map-only-view";
 import { Button } from "@/components/ui/button";
@@ -79,6 +80,11 @@ export default function AnnotationTool() {
   const boundingBoxes: BoundingBox[] = useMemo(() => {
     return annotationsWithBboxes.flatMap(annotation => annotation.boundingBoxes);
   }, [annotationsWithBboxes]);
+
+  // Get the selected annotation object
+  const selectedAnnotation = useMemo(() => {
+    return selectedAnnotationId ? annotations.find(ann => ann.id === selectedAnnotationId) : null;
+  }, [annotations, selectedAnnotationId]);
 
   const handleVideoUpload = useCallback((videoId: string) => {
     toast({
@@ -170,6 +176,32 @@ export default function AnnotationTool() {
       });
     }
   }, [folderId, toast, queryClient]);
+
+  const handleBoundingBoxDelete = useCallback(async (id: string) => {
+    try {
+      await apiRequest("DELETE", `/api/bounding-boxes/${id}`);
+      
+      // Invalidate the query to trigger automatic refetch
+      queryClient.invalidateQueries({ 
+        queryKey: ["folder-annotations-with-bboxes", folderId] 
+      });
+      
+      toast({
+        title: "Bounding box deleted",
+        description: "Bounding box has been removed.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete bounding box.",
+        variant: "destructive",
+      });
+    }
+  }, [folderId, toast, queryClient]);
+
+  const handleFrameNavigate = useCallback((frame: number) => {
+    setCurrentFrame(frame);
+  }, []);
 
   const handleAnnotationUpdate = useCallback(async (id: string, updates: Partial<Annotation>) => {
     try {
@@ -407,27 +439,44 @@ export default function AnnotationTool() {
       <div className="flex-1 flex flex-col">
         {viewMode === "video" ? (
           <div className="flex h-[calc(100vh-80px)]">
-            {/* Left Panel - Video Player */}
-            <div className="flex-1 bg-background border-r border-border">
-            {selectedVideo && gpsData && !gpsDataError ? (
-              <VideoPlayer
-                  video={selectedVideo}
-                  gpsData={gpsData}
-                  annotations={annotations}
-                  boundingBoxes={boundingBoxes}
-                  currentFrame={currentFrame}
-                  onFrameChange={setCurrentFrame}
-                  onAnnotationCreate={handleAnnotationCreate}
-                  onBoundingBoxCreate={handleBoundingBoxCreate}
-                  onAnnotationUpdate={handleAnnotationUpdate}
-                  onBoundingBoxUpdate={handleBoundingBoxUpdate}
-                  selectedAnnotationId={selectedAnnotationId}
-                  onAnnotationSelect={handleAnnotationListSelection}
-                  folderId={folderId}
-                />
-            ) :(
-              <FileUpload onVideoUpload={handleVideoUpload} folderId={folderId} />
-            )}
+            {/* Left Panel - Video Player and Bounding Box List */}
+            <div className="flex-1 bg-background border-r border-border flex flex-col">
+              {/* Video Player - use calculated height to leave space for BoundingBoxList */}
+              <div style={{ height: 'calc(100vh - 80px - 19vh)' }}>
+                {selectedVideo && gpsData && !gpsDataError ? (
+                  <VideoPlayer
+                    video={selectedVideo}
+                    gpsData={gpsData}
+                    annotations={annotations}
+                    boundingBoxes={boundingBoxes}
+                    currentFrame={currentFrame}
+                    onFrameChange={setCurrentFrame}
+                    onAnnotationCreate={handleAnnotationCreate}
+                    onBoundingBoxCreate={handleBoundingBoxCreate}
+                    onAnnotationUpdate={handleAnnotationUpdate}
+                    onBoundingBoxUpdate={handleBoundingBoxUpdate}
+                    selectedAnnotationId={selectedAnnotationId}
+                    onAnnotationSelect={handleAnnotationListSelection}
+                    folderId={folderId}
+                  />
+                ) : (
+                  <FileUpload onVideoUpload={handleVideoUpload} folderId={folderId} />
+                )}
+              </div>
+              
+              {/* Bounding Box List - only show when video is loaded */}
+              {selectedVideo && gpsData && !gpsDataError && (
+                <div className="h-[19vh] border-t border-border bg-card flex-shrink-0">
+                  <BoundingBoxList
+                    annotation={selectedAnnotation ?? null}
+                    boundingBoxes={boundingBoxes}
+                    currentFrame={currentFrame}
+                    videoFps={selectedVideo.fps ?? undefined}
+                    onFrameNavigate={handleFrameNavigate}
+                    onBoundingBoxDelete={handleBoundingBoxDelete}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Right Panel - Map and Annotations */}
@@ -442,14 +491,17 @@ export default function AnnotationTool() {
                 />
               </div>
               
-              <div className="h-80 border-t border-border bg-background p-4 flex flex-col">
+              {/* AnnotationList - larger than BoundingBoxList */}
+            <div className={`border-t border-border bg-background flex flex-col flex-shrink-0 h-[35vh]`}>
+              <div className="p-4 flex-1 min-h-0">
                 <AnnotationList
                   annotations={annotations}
                   selectedAnnotationId={selectedAnnotationId}
-                  onAnnotationSelect={handleAnnotationListSelection}
-                  onAnnotationUpdate={handleAnnotationUpdate}
-                  onAnnotationDelete={handleAnnotationDelete}
-                />
+                    onAnnotationSelect={handleAnnotationListSelection}
+                    onAnnotationUpdate={handleAnnotationUpdate}
+                    onAnnotationDelete={handleAnnotationDelete}
+                  />
+                </div>
               </div>
             </div>
           </div>

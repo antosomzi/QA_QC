@@ -156,6 +156,21 @@ export default function VideoPlayer({
     setTimeout(() => setIsManualNavigation(false), 100);
   }, [video.fps, onFrameChange]);
 
+  // Effect to handle external frame navigation (from BoundingBoxList, etc.)
+  useEffect(() => {
+    if (!video.fps || !videoRef.current) return;
+    
+    // Only navigate if the external currentFrame differs from the video's current frame
+    const videoCurrentFrame = Math.round(videoRef.current.currentTime * video.fps);
+    if (currentFrame !== videoCurrentFrame && !isManualNavigation) {
+      setIsManualNavigation(true);
+      const targetTime = (currentFrame + 0.3) / video.fps;
+      videoRef.current.currentTime = targetTime;
+      setCurrentTime(targetTime);
+      setTimeout(() => setIsManualNavigation(false), 100);
+    }
+  }, [currentFrame, video.fps, isManualNavigation]);
+
   // Frame navigation avec correction du bug
   const goToPreviousFrame = useCallback(() => {
     if (video.fps && currentFrame > 0) {
@@ -548,11 +563,11 @@ export default function VideoPlayer({
   const totalFrames = video.fps && duration ? Math.floor(duration * video.fps) : 0;
 
   return (
-    <div className="flex-1 p-6">
-      <div className="bg-card rounded-lg p-4 h-full">
+    <div className="h-full flex flex-col">
+      <div className="bg-card rounded-lg p-4 h-full flex flex-col">
         <div 
           ref={containerRef}
-          className="relative w-full h-full bg-black rounded-md overflow-hidden"
+          className="relative w-full flex-1 bg-black rounded-md overflow-hidden"
         >
           <video
             ref={videoRef}
@@ -578,7 +593,7 @@ export default function VideoPlayer({
         </div>
         
         {/* Video Controls */}
-        <div className="mt-4 space-y-3">
+        <div className="mt-4 space-y-3 flex-shrink-0">
           <div className="flex items-center space-x-4">
             <Button
               onClick={togglePlayPause}

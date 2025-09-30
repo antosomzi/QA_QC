@@ -127,8 +127,8 @@ export default function AnnotationList({
   };
 
   return (
-    <>
-      <div className="flex items-center justify-between mb-4">
+    <div className="h-full flex flex-col">
+      <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <h3 className="text-lg font-medium">Annotations</h3>
         <div className="flex items-center space-x-2">
           <span className="text-xs text-muted-foreground">Total:</span>
@@ -141,7 +141,7 @@ export default function AnnotationList({
         </div>
       </div>
       
-      <div className="space-y-2 overflow-y-auto flex-1">
+      <div className="space-y-2 overflow-y-auto flex-1 min-h-0">
         {annotations.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <p>No annotations yet</p>
@@ -227,6 +227,6 @@ export default function AnnotationList({
           })
         )}
       </div>
-    </>
+    </div>
   );
 }
