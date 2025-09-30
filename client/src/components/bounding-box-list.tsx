@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { formatTime } from "./helpers/video-player-helpers";
-import { Play, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import type { BoundingBox, Annotation } from "@shared/schema";
 
 interface BoundingBoxListProps {
@@ -68,11 +68,15 @@ export default function BoundingBoxList({
           return (
             <Card
               key={bbox.id}
-              className={`p-3 transition-colors ${
+              className={`p-3 transition-colors cursor-pointer ${
                 isCurrentFrame 
                   ? 'bg-primary/10 border-primary' 
                   : 'bg-card hover:bg-muted/50'
               }`}
+              onClick={() => {
+                // Navigate to frame only
+                onFrameNavigate(bbox.frameIndex);
+              }}
             >
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
@@ -95,23 +99,14 @@ export default function BoundingBoxList({
                 </div>
                 
                 <div className="flex items-center space-x-1 ml-2">
-                  {!isCurrentFrame && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => onFrameNavigate(bbox.frameIndex)}
-                      className="h-7 w-7 p-0"
-                      title={`Go to frame ${bbox.frameIndex}`}
-                    >
-                      <Play className="w-3 h-3" />
-                    </Button>
-                  )}
-                  
                   {onBoundingBoxDelete && (
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => onBoundingBoxDelete(bbox.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onBoundingBoxDelete(bbox.id);
+                      }}
                       className="h-7 w-7 p-0 text-destructive hover:text-destructive"
                       title="Delete bounding box"
                     >
