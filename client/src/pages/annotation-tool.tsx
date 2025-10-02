@@ -23,18 +23,6 @@ export default function AnnotationTool() {
   const [viewMode, setViewMode] = useState<"video" | "map">("video");
   const { toast } = useToast();
 
-  // Function to handle selection from annotation list (with zoom)
-  const handleAnnotationListSelection = useCallback((id: string | null) => {
-    setShouldZoomToSelection(true);
-    setSelectedAnnotationId(id);
-  }, []);
-
-  // Function to handle selection from map (without zoom)
-  const handleMapSelection = useCallback((id: string | null) => {
-    setShouldZoomToSelection(false);
-    setSelectedAnnotationId(id);
-  }, []);
-
   // Fetch folder data to get project ID for back navigation
   const { data: folder } = useQuery({
     queryKey: ["folder", folderId],
@@ -85,6 +73,44 @@ export default function AnnotationTool() {
   const selectedAnnotation = useMemo(() => {
     return selectedAnnotationId ? annotations.find(ann => ann.id === selectedAnnotationId) : null;
   }, [annotations, selectedAnnotationId]);
+
+  // Function to handle selection from annotation list (with zoom and video navigation)
+  const handleAnnotationListSelection = useCallback((id: string | null) => {
+    setShouldZoomToSelection(true);
+    setSelectedAnnotationId(id);
+    
+    // Navigate video to the first bounding box frame of the selected annotation
+    if (id) {
+      const selectedAnnotationData = annotationsWithBboxes.find(ann => ann.id === id);
+      if (selectedAnnotationData && selectedAnnotationData.boundingBoxes.length > 0) {
+        // Sort bounding boxes by frame index and get the first one
+        const sortedBoundingBoxes = [...selectedAnnotationData.boundingBoxes].sort((a, b) => a.frameIndex - b.frameIndex);
+        const firstBoundingBox = sortedBoundingBoxes[0];
+        
+        // Navigate to the frame of the first bounding box
+        setCurrentFrame(firstBoundingBox.frameIndex);
+      }
+    }
+  }, [annotationsWithBboxes]);
+
+  // Function to handle selection from map (without zoom but with video navigation)
+  const handleMapSelection = useCallback((id: string | null) => {
+    setShouldZoomToSelection(false);
+    setSelectedAnnotationId(id);
+    
+    // Navigate video to the first bounding box frame of the selected annotation
+    if (id) {
+      const selectedAnnotationData = annotationsWithBboxes.find(ann => ann.id === id);
+      if (selectedAnnotationData && selectedAnnotationData.boundingBoxes.length > 0) {
+        // Sort bounding boxes by frame index and get the first one
+        const sortedBoundingBoxes = [...selectedAnnotationData.boundingBoxes].sort((a, b) => a.frameIndex - b.frameIndex);
+        const firstBoundingBox = sortedBoundingBoxes[0];
+        
+        // Navigate to the frame of the first bounding box
+        setCurrentFrame(firstBoundingBox.frameIndex);
+      }
+    }
+  }, [annotationsWithBboxes]);
 
   const handleVideoUpload = useCallback((videoId: string) => {
     toast({
