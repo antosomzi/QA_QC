@@ -48,6 +48,7 @@ export default function MapOnlyView({
             onAnnotationSelect={handleMapSelection}
             onMarkerMove={onAnnotationUpdate}
             shouldZoomToSelection={shouldZoomToSelection}
+            useSatelliteView={true}
           />
         </div>
         

@@ -15,6 +15,7 @@ interface MapPanelProps {
   onAnnotationSelect: (id: string | null) => void;
   onMarkerMove: (id: string, updates: { gpsLat: number; gpsLon: number }) => void;
   shouldZoomToSelection?: boolean; // New prop to control zoom behavior
+  useSatelliteView?: boolean; // New prop to control tile layer type
 }
 
 export default function MapPanel({
@@ -23,6 +24,7 @@ export default function MapPanel({
   onAnnotationSelect,
   onMarkerMove,
   shouldZoomToSelection = true,
+  useSatelliteView = false,
 }: MapPanelProps) {
   const mapRef = useRef<any>(null);
   const markersRef = useRef<Map<string, any>>(new Map());
@@ -41,9 +43,16 @@ export default function MapPanel({
 
       const map = window.L.map(mapContainerRef.current).setView([34.8628, -85.5027], 10);
       
-      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors'
-      }).addTo(map);
+      if (useSatelliteView) {
+        window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          attribution: '© Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+          maxZoom: 19
+        }).addTo(map);
+      } else {
+        window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+      }
       
       mapRef.current = map;
     };
