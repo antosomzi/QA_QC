@@ -153,8 +153,10 @@ export default function AnnotationList({
             return (
             <div
               key={annotation.id}
-              className={`bg-card p-3 rounded-md border border-border hover:bg-accent/50 cursor-pointer transition-colors ${
-                annotation.id === selectedAnnotationId ? 'ring-2 ring-primary' : ''
+              className={`p-3 rounded-md border cursor-pointer transition-colors ${
+                annotation.id === selectedAnnotationId 
+                  ? 'bg-primary/10 border-primary border-2 shadow-md' 
+                  : 'bg-card border-border hover:bg-accent/50'
               }`}
               onClick={() => {
                 // Si l'annotation est déjà sélectionnée, la désélectionner
