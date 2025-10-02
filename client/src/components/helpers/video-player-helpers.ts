@@ -225,3 +225,157 @@ export function calculateResizedBbox(
     bboxHeight: Math.round(newBboxHeight),
   };
 }
+
+/**
+ * Sets appropriate cursor style based on bounding box handle type
+ */
+export function setCursorForHandle(canvas: HTMLCanvasElement, handle: string | null): void {
+  if (!handle) {
+    canvas.style.cursor = 'crosshair';
+    return;
+  }
+
+  switch (handle) {
+    case 'nw':
+    case 'se':
+      canvas.style.cursor = 'nwse-resize';
+      break;
+    case 'ne':
+    case 'sw':
+      canvas.style.cursor = 'nesw-resize';
+      break;
+    case 'n':
+    case 's':
+      canvas.style.cursor = 'ns-resize';
+      break;
+    case 'w':
+    case 'e':
+      canvas.style.cursor = 'ew-resize';
+      break;
+    case 'move':
+      canvas.style.cursor = 'move';
+      break;
+    default:
+      canvas.style.cursor = 'crosshair';
+  }
+}
+
+/**
+ * Calculates frame number from video time with offset correction
+ */
+export function calculateFrameFromTime(time: number, fps: number): number {
+  return Math.round(time * fps);
+}
+
+/**
+ * Calculates video time from frame number with offset correction
+ */
+export function calculateTimeFromFrame(frame: number, fps: number): number {
+  // Adding 0.3 offset as documented in bug_video_correction.md
+  return (frame + 0.3) / fps;
+}
+
+/**
+ * Validates if a bounding box meets minimum size requirements
+ */
+export function isValidBoundingBoxSize(bbox: { width: number; height: number }, minSize: number = 10): boolean {
+  return bbox.width >= minSize && bbox.height >= minSize;
+}
+
+/**
+ * Creates bounding box data object for API calls
+ */
+export function createBoundingBoxData(
+  currentFrame: number,
+  currentTime: number,
+  bbox: { x: number; y: number; width: number; height: number }
+) {
+  return {
+    frameIndex: currentFrame,
+    frameTimestampMs: Math.floor(currentTime * 1000),
+    bboxX: Math.round(bbox.x),
+    bboxY: Math.round(bbox.y),
+    bboxWidth: Math.round(bbox.width),
+    bboxHeight: Math.round(bbox.height),
+  };
+}
+
+/**
+ * Draws a bounding box with label on canvas
+ */
+export function drawBoundingBox(
+  ctx: CanvasRenderingContext2D,
+  bbox: BoundingBox,
+  annotation: Annotation,
+  annotations: Annotation[],
+  isSelected: boolean,
+  options: {
+    showHandles?: boolean;
+    isDashed?: boolean;
+  } = {}
+): void {
+  const annotationColor = getAnnotationColor(annotations, annotation.id);
+  const strokeColor = isSelected ? '#FF6B6B' : annotationColor;
+  const lineWidth = isSelected ? 6 : 4;
+
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = lineWidth;
+  
+  if (options.isDashed) {
+    ctx.setLineDash([5, 5]);
+  }
+  
+  ctx.strokeRect(bbox.bboxX, bbox.bboxY, bbox.bboxWidth, bbox.bboxHeight);
+  
+  if (options.isDashed) {
+    ctx.setLineDash([]);
+  }
+
+  // Draw label
+  ctx.fillStyle = strokeColor;
+  ctx.font = isSelected ? 'bold 14px Inter' : '14px Inter';
+  ctx.fillText(annotation.label, bbox.bboxX, bbox.bboxY - 5);
+}
+
+/**
+ * Draws resize handles on a bounding box
+ */
+export function drawBoundingBoxHandles(
+  ctx: CanvasRenderingContext2D,
+  bbox: BoundingBox,
+  handleSize: number = 8,
+  color: string = '#FF6B6B'
+): void {
+  ctx.fillStyle = color;
+  
+  const corners = [
+    { x: bbox.bboxX, y: bbox.bboxY }, // nw
+    { x: bbox.bboxX + bbox.bboxWidth, y: bbox.bboxY }, // ne
+    { x: bbox.bboxX, y: bbox.bboxY + bbox.bboxHeight }, // sw
+    { x: bbox.bboxX + bbox.bboxWidth, y: bbox.bboxY + bbox.bboxHeight } // se
+  ];
+  
+  corners.forEach(corner => {
+    ctx.fillRect(
+      corner.x - handleSize / 2,
+      corner.y - handleSize / 2,
+      handleSize,
+      handleSize
+    );
+  });
+}
+
+/**
+ * Draws a temporary bounding box during creation
+ */
+export function drawTemporaryBoundingBox(
+  ctx: CanvasRenderingContext2D,
+  bbox: { x: number; y: number; width: number; height: number },
+  color: string = '#FF6B6B'
+): void {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 5;
+  ctx.setLineDash([5, 5]);
+  ctx.strokeRect(bbox.x, bbox.y, bbox.width, bbox.height);
+  ctx.setLineDash([]);
+}

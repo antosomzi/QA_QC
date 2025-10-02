@@ -7,7 +7,15 @@ import {
   findBoundingBoxAt, 
   formatTime, 
   calculateResizedBbox,
-  getAnnotationColor
+  getAnnotationColor,
+  setCursorForHandle,
+  calculateFrameFromTime,
+  calculateTimeFromFrame,
+  isValidBoundingBoxSize,
+  createBoundingBoxData,
+  drawBoundingBox,
+  drawBoundingBoxHandles,
+  drawTemporaryBoundingBox
 } from "./helpers/video-player-helpers";
 import type { Video, GpsData, Annotation, BoundingBox } from "@shared/schema";
 
@@ -99,9 +107,7 @@ export default function VideoPlayer({
     
     if (videoRef.current && video.fps) {
       const time = videoRef.current.currentTime;
-      // Utiliser Math.round au lieu de Math.floor pour une meilleure synchronisation
-      // avec la frame réellement affichée
-      const frame = Math.round(time * video.fps);
+      const frame = calculateFrameFromTime(time, video.fps);
       setCurrentTime(time);
       // Ne mettre à jour la frame que si elle a vraiment changé
       if (frame !== currentFrame) {
@@ -144,8 +150,7 @@ export default function VideoPlayer({
     if (!video.fps || !videoRef.current) return;
     
     setIsManualNavigation(true);
-    //bug_video_correction.md for the + 0.3 offset explanation
-    const targetTime = (targetFrame + 0.3) / video.fps;
+    const targetTime = calculateTimeFromFrame(targetFrame, video.fps);
     
     // Effectuer le seek
     videoRef.current.currentTime = targetTime;
@@ -161,10 +166,10 @@ export default function VideoPlayer({
     if (!video.fps || !videoRef.current) return;
     
     // Only navigate if the external currentFrame differs from the video's current frame
-    const videoCurrentFrame = Math.round(videoRef.current.currentTime * video.fps);
+    const videoCurrentFrame = calculateFrameFromTime(videoRef.current.currentTime, video.fps);
     if (currentFrame !== videoCurrentFrame && !isManualNavigation) {
       setIsManualNavigation(true);
-      const targetTime = (currentFrame + 0.3) / video.fps;
+      const targetTime = calculateTimeFromFrame(currentFrame, video.fps);
       videoRef.current.currentTime = targetTime;
       setCurrentTime(targetTime);
       setTimeout(() => setIsManualNavigation(false), 100);
@@ -295,35 +300,8 @@ export default function VideoPlayer({
     // Update cursor based on what's under the mouse
     const result = findBoundingBoxAt(coords.x, coords.y, boundingBoxes, currentFrame, 10);
     if (canvasRef.current) {
-      const canvas = canvasRef.current;
-      if (result) {
-        const { handle } = result;
-        switch (handle) {
-          case 'nw':
-          case 'se':
-            canvas.style.cursor = 'nwse-resize';
-            break;
-          case 'ne':
-          case 'sw':
-            canvas.style.cursor = 'nesw-resize';
-            break;
-          case 'n':
-          case 's':
-            canvas.style.cursor = 'ns-resize';
-            break;
-          case 'w':
-          case 'e':
-            canvas.style.cursor = 'ew-resize';
-            break;
-          case 'move':
-            canvas.style.cursor = 'move';
-            break;
-          default:
-            canvas.style.cursor = 'crosshair';
-        }
-      } else {
-        canvas.style.cursor = 'crosshair';
-      }
+      const handle = result?.handle || null;
+      setCursorForHandle(canvasRef.current, handle);
     }
   }, [isDrawing, drawStart, isMoving, isResizing, selectedBoundingBox, moveStart, resizeHandle, boundingBoxes, currentFrame, getCanvasCoordinatesLocal]);
 
@@ -355,8 +333,7 @@ export default function VideoPlayer({
     
     if (isDrawing && currentBBox && gpsData && video.fps) {
       // Check if the bounding box has minimum size (avoid point-like boxes)
-      const minSize = 10;
-      if (currentBBox.width >= minSize && currentBBox.height >= minSize) {
+      if (isValidBoundingBoxSize(currentBBox)) {
         
         // Check if there's a selected annotation and no bounding box for it on the current frame
         const selectedAnnotation = selectedAnnotationId ? annotations.find(ann => ann.id === selectedAnnotationId) : null;
@@ -366,15 +343,7 @@ export default function VideoPlayer({
         
         if (selectedAnnotation && !hasSelectedAnnotationBboxOnCurrentFrame) {
           // Add a bounding box to the existing selected annotation
-          const boundingBoxData = {
-            frameIndex: currentFrame,
-            frameTimestampMs: Math.floor(currentTime * 1000),
-            bboxX: Math.round(currentBBox.x),
-            bboxY: Math.round(currentBBox.y),
-            bboxWidth: Math.round(currentBBox.width),
-            bboxHeight: Math.round(currentBBox.height),
-          };
-
+          const boundingBoxData = createBoundingBoxData(currentFrame, currentTime, currentBBox);
           onBoundingBoxCreate(selectedAnnotation.id, boundingBoxData);
         } else {
           // Create a new annotation with bounding box
@@ -396,14 +365,7 @@ export default function VideoPlayer({
             gpsLon: gpsPoint.lon,
           };
 
-          const boundingBoxData = {
-            frameIndex: currentFrame,
-            frameTimestampMs: Math.floor(currentTime * 1000),
-            bboxX: Math.round(currentBBox.x),
-            bboxY: Math.round(currentBBox.y),
-            bboxWidth: Math.round(currentBBox.width),
-            bboxHeight: Math.round(currentBBox.height),
-          };
+          const boundingBoxData = createBoundingBoxData(currentFrame, currentTime, currentBBox);
 
           // Call the function with separated data
           onAnnotationCreate(annotationData, boundingBoxData);
@@ -455,28 +417,14 @@ export default function VideoPlayer({
       
       // Use selectedBoundingBox if it exists for this bbox (for smooth transition during/after moves)
       const bboxToRender = (selectedBoundingBox && bbox.id === selectedBoundingBox.id) ? selectedBoundingBox : bbox;
-      
-      // Get consistent color for this annotation
-      const annotationColor = getAnnotationColor(annotations, annotation.id);
       const isSelected = annotation.id === selectedAnnotationId;
       
-      ctx.strokeStyle = isSelected ? '#FF6B6B' : annotationColor; // Red for selected, unique color otherwise
-      ctx.lineWidth = isSelected ? 6 : 4; // Thicker line for selected
-      ctx.strokeRect(bboxToRender.bboxX, bboxToRender.bboxY, bboxToRender.bboxWidth, bboxToRender.bboxHeight);
-      
-      // Draw label
-      ctx.fillStyle = isSelected ? '#FF6B6B' : annotationColor;
-      ctx.font = isSelected ? 'bold 14px Inter' : '14px Inter';
-      ctx.fillText(annotation.label, bboxToRender.bboxX, bboxToRender.bboxY - 5);
+      drawBoundingBox(ctx, bboxToRender, annotation, annotations, isSelected);
     });
     
     // Draw current bounding box being drawn
     if (currentBBox) {
-      ctx.strokeStyle = '#FF6B6B';
-      ctx.lineWidth = 5;
-      ctx.setLineDash([5, 5]);
-      ctx.strokeRect(currentBBox.x, currentBBox.y, currentBBox.width, currentBBox.height);
-      ctx.setLineDash([]);
+      drawTemporaryBoundingBox(ctx, currentBBox);
     }
     
     // Draw the selected bounding box being moved/resized
@@ -485,36 +433,11 @@ export default function VideoPlayer({
       const annotation = annotations.find(ann => ann.id === selectedBoundingBox.annotationId);
       
       if (annotation) {
-        
-        ctx.strokeStyle = '#FF6B6B'; // Always red when selected and moving/resizing
-        ctx.lineWidth = 6;
-        ctx.strokeRect(selectedBoundingBox.bboxX, selectedBoundingBox.bboxY, selectedBoundingBox.bboxWidth, selectedBoundingBox.bboxHeight);
-        
-        // Draw label
-        ctx.fillStyle = '#FF6B6B';
-        ctx.font = 'bold 14px Inter';
-        ctx.fillText(annotation.label, selectedBoundingBox.bboxX, selectedBoundingBox.bboxY - 5);
+        drawBoundingBox(ctx, selectedBoundingBox, annotation, annotations, true);
         
         // Draw handles if resizing
         if (isResizing) {
-          ctx.fillStyle = '#FF6B6B';
-          const handleSize = 8;
-          const { bboxX, bboxY, bboxWidth, bboxHeight } = selectedBoundingBox;
-          const corners = [
-            { x: bboxX, y: bboxY }, // nw
-            { x: bboxX + bboxWidth, y: bboxY }, // ne
-            { x: bboxX, y: bboxY + bboxHeight }, // sw
-            { x: bboxX + bboxWidth, y: bboxY + bboxHeight } // se
-          ];
-          
-          corners.forEach(corner => {
-            ctx.fillRect(
-              corner.x - handleSize / 2,
-              corner.y - handleSize / 2,
-              handleSize,
-              handleSize
-            );
-          });
+          drawBoundingBoxHandles(ctx, selectedBoundingBox);
         }
       }
     }
@@ -527,25 +450,7 @@ export default function VideoPlayer({
       });
       
       if (selectedBbox) {
-        
-        ctx.fillStyle = '#FF6B6B'; // Handles are always red for selected
-        const handleSize = 8;
-        const { bboxX, bboxY, bboxWidth, bboxHeight } = selectedBbox;
-        const corners = [
-          { x: bboxX, y: bboxY }, // nw
-          { x: bboxX + bboxWidth, y: bboxY }, // ne
-          { x: bboxX, y: bboxY + bboxHeight }, // sw
-          { x: bboxX + bboxWidth, y: bboxY + bboxHeight } // se
-        ];
-        
-        corners.forEach(corner => {
-          ctx.fillRect(
-            corner.x - handleSize / 2,
-            corner.y - handleSize / 2,
-            handleSize,
-            handleSize
-          );
-        });
+        drawBoundingBoxHandles(ctx, selectedBbox);
       }
     }
   }, [annotations, currentFrameBoundingBoxes, selectedAnnotationId, currentBBox, isMoving, isResizing, selectedBoundingBox]);
@@ -626,7 +531,7 @@ export default function VideoPlayer({
                 
                 // Use the existing navigateToFrame function for precise frame seeking
                 if (video.fps) {
-                  const targetFrame = Math.floor(targetTime * video.fps);
+                  const targetFrame = calculateFrameFromTime(targetTime, video.fps);
                   navigateToFrame(targetFrame);
                 } else {
                   throw new Error("Video FPS is not defined");
