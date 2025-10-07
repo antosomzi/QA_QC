@@ -8,6 +8,19 @@ export interface DrawingBBox {
 }
 
 /**
+ * Checks if a bounding box has changed significantly to warrant an update
+ */
+export function hasSignificantChange(initial: BoundingBox, current: BoundingBox): boolean {
+  const MIN_CHANGE_THRESHOLD = 2; // 2 pixels minimum change to trigger update
+  return (
+    Math.abs(initial.bboxX - current.bboxX) >= MIN_CHANGE_THRESHOLD ||
+    Math.abs(initial.bboxY - current.bboxY) >= MIN_CHANGE_THRESHOLD ||
+    Math.abs(initial.bboxWidth - current.bboxWidth) >= MIN_CHANGE_THRESHOLD ||
+    Math.abs(initial.bboxHeight - current.bboxHeight) >= MIN_CHANGE_THRESHOLD
+  );
+}
+
+/**
  * Converts mouse coordinates to canvas coordinates
  */
 export function getCanvasCoordinates(

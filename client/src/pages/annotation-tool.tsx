@@ -93,6 +93,13 @@ export default function AnnotationTool() {
     }
   }, [annotationsWithBboxes]);
 
+  // Function to handle selection from video player (without frame navigation)
+  const handleVideoPlayerSelection = useCallback((id: string | null) => {
+    setShouldZoomToSelection(true);
+    setSelectedAnnotationId(id);
+    // No frame navigation - stay on current frame
+  }, []);
+
   // Function to handle selection from map (without zoom but with video navigation)
   const handleMapSelection = useCallback((id: string | null) => {
     setShouldZoomToSelection(false);
@@ -482,7 +489,7 @@ export default function AnnotationTool() {
                     onAnnotationUpdate={handleAnnotationUpdate}
                     onBoundingBoxUpdate={handleBoundingBoxUpdate}
                     selectedAnnotationId={selectedAnnotationId}
-                    onAnnotationSelect={handleAnnotationListSelection}
+                    onAnnotationSelect={handleVideoPlayerSelection}
                     folderId={folderId}
                   />
                 ) : (

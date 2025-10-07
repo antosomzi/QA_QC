@@ -15,7 +15,8 @@ import {
   createBoundingBoxData,
   drawBoundingBox,
   drawBoundingBoxHandles,
-  drawTemporaryBoundingBox
+  drawTemporaryBoundingBox,
+  hasSignificantChange
 } from "./helpers/video-player-helpers";
 import type { Video, GpsData, Annotation, BoundingBox } from "@shared/schema";
 
@@ -94,6 +95,7 @@ export default function VideoPlayer({
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   const [moveStart, setMoveStart] = useState<{ x: number; y: number } | null>(null);
   const [selectedBoundingBox, setSelectedBoundingBox] = useState<BoundingBox | null>(null);
+  const [initialBoundingBox, setInitialBoundingBox] = useState<BoundingBox | null>(null);
 
   // Memoize bounding boxes for current frame to avoid unnecessary re-renders
   const currentFrameBoundingBoxes = useMemo(() => {
@@ -208,6 +210,7 @@ export default function VideoPlayer({
           updatedBbox.bboxHeight === selectedBoundingBox.bboxHeight) {
         // The optimistic update has synchronized, we can now clear selectedBoundingBox
         setSelectedBoundingBox(null);
+        setInitialBoundingBox(null);
       }
     }
   }, [boundingBoxes, selectedBoundingBox, isMoving, isResizing]);
@@ -228,6 +231,7 @@ export default function VideoPlayer({
       if (annotation) {
         onAnnotationSelect(annotation.id);
         setSelectedBoundingBox(boundingBox);
+        setInitialBoundingBox({ ...boundingBox }); // Store initial state
         
         if (handle === 'move') {
           // Start moving
@@ -307,27 +311,33 @@ export default function VideoPlayer({
 
   const handleCanvasMouseUp = useCallback((e: React.MouseEvent) => {
     
-    if (isMoving && selectedBoundingBox) {
-      // Finish moving - update the bounding box
-      onBoundingBoxUpdate(selectedBoundingBox.id, {
-        bboxX: selectedBoundingBox.bboxX,
-        bboxY: selectedBoundingBox.bboxY
-      });
+    if (isMoving && selectedBoundingBox && initialBoundingBox) {
+      // Only update if there was a significant change
+      if (hasSignificantChange(initialBoundingBox, selectedBoundingBox)) {
+        onBoundingBoxUpdate(selectedBoundingBox.id, {
+          bboxX: selectedBoundingBox.bboxX,
+          bboxY: selectedBoundingBox.bboxY
+        });
+      }
       setIsMoving(false);
       setMoveStart(null);
+      setInitialBoundingBox(null);
       return;
     }
     
-    if (isResizing && selectedBoundingBox) {
-      // Finish resizing - update the bounding box
-      onBoundingBoxUpdate(selectedBoundingBox.id, {
-        bboxX: selectedBoundingBox.bboxX,
-        bboxY: selectedBoundingBox.bboxY,
-        bboxWidth: selectedBoundingBox.bboxWidth,
-        bboxHeight: selectedBoundingBox.bboxHeight
-      });
+    if (isResizing && selectedBoundingBox && initialBoundingBox) {
+      // Only update if there was a significant change
+      if (hasSignificantChange(initialBoundingBox, selectedBoundingBox)) {
+        onBoundingBoxUpdate(selectedBoundingBox.id, {
+          bboxX: selectedBoundingBox.bboxX,
+          bboxY: selectedBoundingBox.bboxY,
+          bboxWidth: selectedBoundingBox.bboxWidth,
+          bboxHeight: selectedBoundingBox.bboxHeight
+        });
+      }
       setIsResizing(false);
       setResizeHandle(null);
+      setInitialBoundingBox(null);
       return;
     }
     
@@ -396,7 +406,8 @@ export default function VideoPlayer({
     setCurrentBBox(null);
     setMoveStart(null);
     setResizeHandle(null);
-  }, [isDrawing, currentBBox, gpsData, video, currentFrame, currentTime, onAnnotationCreate, onBoundingBoxCreate, folderId, isMoving, isResizing, selectedBoundingBox, onBoundingBoxUpdate, getCanvasCoordinatesLocal, onAnnotationSelect, selectedAnnotationId, annotations, boundingBoxes]);
+    setInitialBoundingBox(null);
+  }, [isDrawing, currentBBox, gpsData, video, currentFrame, currentTime, onAnnotationCreate, onBoundingBoxCreate, folderId, isMoving, isResizing, selectedBoundingBox, onBoundingBoxUpdate, getCanvasCoordinatesLocal, onAnnotationSelect, selectedAnnotationId, annotations, boundingBoxes, initialBoundingBox]);
 
   // Draw annotations on canvas
   useEffect(() => {
