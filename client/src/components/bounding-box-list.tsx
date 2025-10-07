@@ -1,10 +1,12 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import { formatTime } from "./helpers/video-player-helpers";
-import { Trash2 } from "lucide-react";
+import { Trash2, Edit } from "lucide-react";
 import type { BoundingBox, Annotation } from "@shared/schema";
+import EditAnnotationModal from "./edit-annotation-modal";
 
 interface BoundingBoxListProps {
   annotation: Annotation | null;
@@ -13,6 +15,7 @@ interface BoundingBoxListProps {
   videoFps?: number;
   onFrameNavigate: (frame: number) => void;
   onBoundingBoxDelete?: (id: string) => void;
+  onAnnotationUpdate?: (id: string, updates: Partial<Annotation>) => void;
 }
 
 export default function BoundingBoxList({
@@ -22,7 +25,10 @@ export default function BoundingBoxList({
   videoFps = 30,
   onFrameNavigate,
   onBoundingBoxDelete,
+  onAnnotationUpdate,
 }: BoundingBoxListProps) {
+  const [editingAnnotation, setEditingAnnotation] = useState<Annotation | null>(null);
+
   // Filter bounding boxes for the selected annotation and sort by frame
   const annotationBoundingBoxes = useMemo(() => {
     if (!annotation) return [];
@@ -55,9 +61,37 @@ export default function BoundingBoxList({
         <h3 className="text-sm font-medium text-foreground">
           Bounding Boxes for "{annotation.label}"
         </h3>
-        <Badge variant="secondary" className="text-xs">
-          {annotationBoundingBoxes.length} box{annotationBoundingBoxes.length !== 1 ? 'es' : ''}
-        </Badge>
+        <div className="flex items-center space-x-2">
+          <Badge variant="secondary" className="text-xs">
+            {annotationBoundingBoxes.length} box{annotationBoundingBoxes.length !== 1 ? 'es' : ''}
+          </Badge>
+          {onAnnotationUpdate && (
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setEditingAnnotation(annotation)}
+                  className="h-7 w-7 p-0"
+                  title="Edit annotation"
+                >
+                  <Edit className="w-3 h-3" />
+                </Button>
+              </DialogTrigger>
+              {editingAnnotation && (
+                <EditAnnotationModal 
+                  annotation={editingAnnotation}
+                  onSave={(updates) => {
+                    if (onAnnotationUpdate) {
+                      onAnnotationUpdate(editingAnnotation.id, updates);
+                    }
+                  }}
+                  onClose={() => setEditingAnnotation(null)}
+                />
+              )}
+            </Dialog>
+          )}
+        </div>
       </div>
       
       <div className="flex-1 overflow-y-auto space-y-2">

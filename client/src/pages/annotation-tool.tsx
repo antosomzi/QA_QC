@@ -500,6 +500,7 @@ export default function AnnotationTool() {
                     videoFps={selectedVideo.fps ?? undefined}
                     onFrameNavigate={handleFrameNavigate}
                     onBoundingBoxDelete={handleBoundingBoxDelete}
+                    onAnnotationUpdate={handleAnnotationUpdate}
                   />
                 </div>
               )}
