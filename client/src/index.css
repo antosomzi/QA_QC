@@ -159,6 +159,17 @@
   transform: scale(1.2);
 }
 
+/* Ensure Leaflet map has lower z-index than modals */
+.leaflet-pane,
+.leaflet-map-pane,
+.leaflet-control-container {
+  z-index: 999 !important;
+}
+
+.leaflet-popup-pane {
+  z-index: 1000 !important;
+}
+
 /* Scrollbar styling for light theme */
 ::-webkit-scrollbar {
   width: 8px;

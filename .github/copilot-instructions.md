@@ -162,3 +162,10 @@ const canvasCoords = getCanvasCoordinates(e, canvasRef);
 - Interface definitions in `client/src/types/` for component-specific types
 
 When working on this codebase, prioritize understanding the GPS-video synchronization logic and the annotation-bounding box relationship, as these are the core domain concepts that drive all feature development.
+
+
+## Maintenance of This Context File
+
+Modify this context file whenever consequential changes are made in the codebase.
+
+Updates should only occur if the changes are relevant and meaningful to the level of detail captured in this context file, ensuring that it remains accurate and reflective of the current project state.

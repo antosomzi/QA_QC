@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Edit, Trash2 } from "lucide-react";
 import type { Annotation } from "@shared/schema";
 import { getAnnotationCSSColor, getAnnotationIndex, getAnnotationHexColor, getAnnotationColor } from "./helpers/video-player-helpers";
+import SignTypeSelector from "./sign-type-selector";
 
 interface AnnotationListProps {
   annotations: Annotation[];
@@ -23,12 +24,14 @@ interface EditModalProps {
 
 function EditAnnotationModal({ annotation, onSave, onClose }: EditModalProps) {
   const [label, setLabel] = useState(annotation.label);
+  const [signType, setSignType] = useState(annotation.signType || undefined);
   const [gpsLat, setGpsLat] = useState(annotation.gpsLat);
   const [gpsLon, setGpsLon] = useState(annotation.gpsLon);
 
   const handleSave = () => {
     const updates: Partial<Annotation> = {
       label,
+      signType,
       gpsLat,
       gpsLon,
     };
@@ -58,6 +61,14 @@ function EditAnnotationModal({ annotation, onSave, onClose }: EditModalProps) {
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             data-testid="input-annotation-label"
+          />
+        </div>
+        
+        <div>
+          <SignTypeSelector
+            value={signType}
+            onValueChange={setSignType}
+            placeholder="Select a sign type (optional)"
           />
         </div>
         
