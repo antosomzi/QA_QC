@@ -72,7 +72,7 @@ const navigateToFrame = useCallback((targetFrame: number) => {
 ```
 
 **Key Video Player Insights:**
-- Uses `+0.5` frame offset to position cursor in middle of target frame
+- Uses `+0.5` frame offset to  Garantit une distance suffisante par rapport au temps actuel
 - This prevents visual update bugs when navigating between nearby frames  
 - Manual navigation temporarily disables automatic time-based updates
 - `Math.round()` provides better frame synchronization than `Math.floor()`
