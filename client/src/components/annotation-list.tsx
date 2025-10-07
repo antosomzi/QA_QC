@@ -7,6 +7,7 @@ import { Edit, Trash2 } from "lucide-react";
 import type { Annotation } from "@shared/schema";
 import { getAnnotationCSSColor, getAnnotationIndex, getAnnotationHexColor, getAnnotationColor } from "./helpers/video-player-helpers";
 import SignTypeSelector from "./sign-type-selector";
+import { getSignTypeById } from "@/data/sign-types";
 
 interface AnnotationListProps {
   annotations: Annotation[];
@@ -161,6 +162,7 @@ export default function AnnotationList({
         ) : (
           annotations.map((annotation) => {
             const annotationColor = getAnnotationColor(annotations, annotation.id);
+            const signType = annotation.signType ? getSignTypeById(annotation.signType) : null;
             return (
             <div
               key={annotation.id}
@@ -181,8 +183,16 @@ export default function AnnotationList({
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
+                  {signType && (
+                    <img
+                      src={signType.imagePath}
+                      alt={signType.name}
+                      className="w-6 h-6 object-contain flex-shrink-0"
+                      loading="lazy"
+                    />
+                  )}
                   <div 
-                    className="w-2 h-2 rounded-full" 
+                    className="w-2 h-2 rounded-full flex-shrink-0" 
                     style={{ backgroundColor: annotationColor }}
                   ></div>
                   <div>
