@@ -100,7 +100,7 @@ export class PostgresStorage implements IStorage {
   // Video methods
   async createVideo(insertVideo: InsertVideo): Promise<Video> {
     // Check if folder already has a video
-    const existingVideos = await this.getVideosByFolderId(insertVideo.folderId);
+  const existingVideos = await this.getVideosByFolderId(insertVideo.folderId as string);
     if (existingVideos.length > 0) {
       throw new Error("Folder already contains a video. Each folder can only contain one video.");
     }
@@ -138,7 +138,7 @@ export class PostgresStorage implements IStorage {
     // If folderId is not provided but videoId is, get folderId from the video
     if (!insertAnnotation.folderId && insertAnnotation.videoId) {
       const [video] = await this.db.select().from(videos).where(eq(videos.id, insertAnnotation.videoId)).limit(1);
-      if (video) {
+      if (video && video.folderId) {
         insertAnnotation.folderId = video.folderId;
       }
     }
@@ -256,48 +256,111 @@ export class PostgresStorage implements IStorage {
   }
 
   async importAnnotationsByFolder(folderId: string, data: any): Promise<void> {
-    // Import annotations using the folder ID
-    // Only look at the annotations array, ignore video/folder attributes
-    const annotationsToImport = data.annotations || (Array.isArray(data) ? data : []);
-    
-    for (const annData of annotationsToImport) {
-      // Créer d'abord l'annotation (sans les anciennes propriétés de bbox)
-      const annotation: InsertAnnotation = {
-        folderId: folderId,
-        gpsLat: annData.gps.lat,
-        gpsLon: annData.gps.lon,
-        label: annData.label
-      };
-      
-      const createdAnnotation = await this.createAnnotation(annotation);
-      
-      // Ensuite créer les bounding boxes associées
-      if (annData.boundingBoxes && Array.isArray(annData.boundingBoxes)) {
-        // Nouveau format avec multiples bounding boxes
-        for (const bboxData of annData.boundingBoxes) {
-          const boundingBox: InsertBoundingBox = {
-            annotationId: createdAnnotation.id,
-            frameIndex: bboxData.frame_index,
-            frameTimestampMs: bboxData.frame_timestamp_ms,
-            bboxX: bboxData.x,
-            bboxY: bboxData.y,
-            bboxWidth: bboxData.width,
-            bboxHeight: bboxData.height
-          };
-          await this.createBoundingBox(boundingBox);
+    // Only support the new frame-by-frame detector output format.
+    // Expected structure: { output: { frames: [...] } } or { frames: [...] }
+    const frames = (data && data.output && Array.isArray(data.output.frames))
+      ? data.output.frames
+      : (Array.isArray(data.frames) ? data.frames : null);
+
+    if (!frames || !Array.isArray(frames)) {
+      throw new Error('Unsupported import format: expected frame-by-frame JSON with output.frames or frames array');
+    }
+
+    type ClusterAgg = {
+      label: string;
+      // assume same 'class' for a given cluster_id
+      gpsLat?: number;
+      gpsLon?: number;
+      bboxes: Array<{
+        frameIndex: number;
+        frameTimestampMs: number;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      }>;
+    };
+
+    const clusters = new Map<string, ClusterAgg>();
+
+    for (const frame of frames) {
+      const rawFrameIndex = frame.frame_number;
+      const frameIndex = typeof rawFrameIndex === 'string' ? parseInt(rawFrameIndex, 10) || 0 : (rawFrameIndex || 0);
+      const frameTs = frame.location && (frame.location.time ?? frame.location.timestamp)
+        ? Math.round(frame.location.time ?? frame.location.timestamp)
+        : 0;
+
+      const signs = Array.isArray(frame.signs) ? frame.signs : [];
+      for (const sign of signs) {
+        const clusterId = sign.cluster_id;
+        const fallbackKey = `${sign.class || 'unknown'}_${(sign.coordinates || []).join('_')}`;
+        const key = (clusterId !== undefined && clusterId !== null) ? `cluster_${clusterId}` : `fallback_${fallbackKey}`;
+
+        if (!clusters.has(key)) {
+          clusters.set(key, {
+            label: sign.class || 'unknown',
+            bboxes: []
+          });
         }
-      } else if (annData.bbox) {
-        // Support de l'ancien format (rétrocompatibilité)
-        const boundingBox: InsertBoundingBox = {
+
+        const agg = clusters.get(key)!;
+
+        // Prefer per-sign location (if available), otherwise use frame location
+        const lat = sign.location && typeof sign.location.lat === 'number' ? sign.location.lat : (frame.location && typeof frame.location.lat === 'number' ? frame.location.lat : undefined);
+        const lon = sign.location && typeof sign.location.lon === 'number' ? sign.location.lon : (frame.location && typeof frame.location.lon === 'number' ? frame.location.lon : undefined);
+        if ((agg.gpsLat === undefined || agg.gpsLon === undefined) && lat !== undefined && lon !== undefined) {
+          agg.gpsLat = lat;
+          agg.gpsLon = lon;
+        }
+
+        const coords = Array.isArray(sign.coordinates) ? sign.coordinates : [];
+        const [x = 0, y = 0, w = 0, h = 0] = coords.map((n: any) => Number(n || 0));
+
+        agg.bboxes.push({
+          frameIndex,
+          frameTimestampMs: frameTs,
+          x: Math.round(x),
+          y: Math.round(y),
+          width: Math.round(w),
+          height: Math.round(h),
+        });
+      }
+    }
+
+    // Persist clusters as annotations + bounding boxes
+  for (const [, cluster] of Array.from(clusters.entries())) {
+      // Skip clusters without a GPS location (annotations require gpsLat/gpsLon)
+      if (cluster.gpsLat === undefined || cluster.gpsLon === undefined) {
+        continue;
+      }
+
+      // signType is the label we recorded from the detector's 'class' field
+      const signType = cluster.label || undefined;
+      const insertAnnotation: InsertAnnotation = {
+        folderId: folderId,
+        gpsLat: cluster.gpsLat,
+        gpsLon: cluster.gpsLon,
+        label: cluster.label,
+        signType: signType as any,
+      };
+
+      const createdAnnotation = await this.createAnnotation(insertAnnotation);
+
+      for (const bbox of cluster.bboxes) {
+        const insertBoundingBox: InsertBoundingBox = {
           annotationId: createdAnnotation.id,
-          frameIndex: annData.frame_index || 0,
-          frameTimestampMs: annData.frame_timestamp_ms || 0,
-          bboxX: annData.bbox.x,
-          bboxY: annData.bbox.y,
-          bboxWidth: annData.bbox.width,
-          bboxHeight: annData.bbox.height
+          frameIndex: bbox.frameIndex,
+          frameTimestampMs: bbox.frameTimestampMs,
+          bboxX: bbox.x,
+          bboxY: bbox.y,
+          bboxWidth: bbox.width,
+          bboxHeight: bbox.height,
         };
-        await this.createBoundingBox(boundingBox);
+        try {
+          await this.createBoundingBox(insertBoundingBox);
+        } catch (err) {
+          // Ignore duplicate-frame errors (unique constraint) or other bbox insert issues per bbox
+        }
       }
     }
   }

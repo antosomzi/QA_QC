@@ -4,8 +4,10 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+// Allow large JSON payloads for bulk detector imports. Configure via JSON_LIMIT env var (e.g. 50mb).
+const jsonLimit = process.env.JSON_LIMIT || "50mb";
+app.use(express.json({ limit: jsonLimit }));
+app.use(express.urlencoded({ extended: false, limit: jsonLimit }));
 
 app.use((req, res, next) => {
   const start = Date.now();
