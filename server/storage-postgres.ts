@@ -133,6 +133,17 @@ export class PostgresStorage implements IStorage {
     return gpsDataEntry;
   }
 
+  async deleteGpsData(id: string): Promise<boolean> {
+    const result = await this.db.delete(gpsData).where(eq(gpsData.id, id)).returning({ id: gpsData.id });
+    return result.length > 0;
+  }
+
+  async deleteVideo(id: string): Promise<boolean> {
+    // GPS data and annotations will be deleted via cascade in database
+    const result = await this.db.delete(videos).where(eq(videos.id, id)).returning({ id: videos.id });
+    return result.length > 0;
+  }
+
   // Annotation methods
   async createAnnotation(insertAnnotation: InsertAnnotation): Promise<Annotation> {
     // If folderId is not provided but videoId is, get folderId from the video

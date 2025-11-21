@@ -264,6 +264,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete video and associated GPS data
+  app.delete("/api/videos/:id", async (req, res) => {
+    try {
+      const video = await storage.getVideo(req.params.id);
+      if (!video) {
+        return res.status(404).json({ message: "Video not found" });
+      }
+
+      // Delete associated GPS data and file
+      try {
+        const gpsData = await storage.getGpsDataByVideoId(req.params.id);
+        if (gpsData) {
+          // Delete GPS file from disk
+          const gpsFilePath = path.join('uploads', gpsData.filename);
+          if (fs.existsSync(gpsFilePath)) {
+            fs.unlinkSync(gpsFilePath);
+          }
+          // Delete GPS data from database
+          await storage.deleteGpsData(gpsData.id);
+        }
+      } catch (error) {
+        // GPS data might not exist, that's okay
+      }
+
+      // Delete the video file from disk
+      const videoFilePath = path.join('uploads', video.filename);
+      if (fs.existsSync(videoFilePath)) {
+        fs.unlinkSync(videoFilePath);
+      }
+
+      // Delete video record from database
+      const deleted = await storage.deleteVideo(req.params.id);
+
+      if (!deleted) {
+        return res.status(500).json({ message: "Failed to delete video from database" });
+      }
+
+      res.json({ message: "Video deleted successfully" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete video" });
+    }
+  });
+
   // GPS data routes
   app.post("/api/gps-data", upload.single('gpsFile'), async (req, res) => {
     try {

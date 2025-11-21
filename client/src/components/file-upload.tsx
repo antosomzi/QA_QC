@@ -1,9 +1,9 @@
 import { useState, useCallback } from "react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, Video, MapPin } from "lucide-react";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Video } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
+import GpsUpload from "@/components/gps-upload";
 
 interface FileUploadProps {
   onVideoUpload: (videoId: string) => void;
@@ -80,36 +80,9 @@ export default function FileUpload({ onVideoUpload, folderId }: FileUploadProps)
     }
   }, [onVideoUpload, toast, folderId]);
 
-  const handleGpsUpload = useCallback(async (file: File) => {
-    if (!file || !uploadedVideoId) return;
 
-    setIsUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('gpsFile', file);
-      formData.append('videoId', uploadedVideoId);
 
-      await apiRequest("POST", "/api/gps-data", formData);
-      
-      // Invalider les requêtes pour rafraîchir les données GPS
-      queryClient.invalidateQueries({ queryKey: ["video-gps", uploadedVideoId] });
-      
-      toast({
-        title: "GPS data uploaded successfully",
-        description: "GPS coordinates are now synchronized with video frames.",
-      });
-    } catch (error) {
-      toast({
-        title: "Upload failed",
-        description: "Failed to upload GPS data. Please check the file format.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsUploading(false);
-    }
-  }, [uploadedVideoId, toast]);
-
-  const handleFileDrop = useCallback((e: React.DragEvent, fileType: 'video' | 'gps') => {
+  const handleFileDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.currentTarget.classList.remove('drag-over');
     
@@ -118,28 +91,16 @@ export default function FileUpload({ onVideoUpload, folderId }: FileUploadProps)
     
     if (!file) return;
 
-    if (fileType === 'video') {
-      if (file.type.startsWith('video/')) {
-        handleVideoUpload(file);
-      } else {
-        toast({
-          title: "Invalid file type",
-          description: "Please upload a video file (MP4, AVI, MOV, etc.)",
-          variant: "destructive",
-        });
-      }
+    if (file.type.startsWith('video/')) {
+      handleVideoUpload(file);
     } else {
-      if (file.name.endsWith('.csv') || file.name.endsWith('.json')) {
-        handleGpsUpload(file);
-      } else {
-        toast({
-          title: "Invalid file type",
-          description: "Please upload a CSV or JSON file for GPS data.",
-          variant: "destructive",
-        });
-      }
+      toast({
+        title: "Invalid file type",
+        description: "Please upload a video file (MP4, AVI, MOV, etc.)",
+        variant: "destructive",
+      });
     }
-  }, [handleVideoUpload, handleGpsUpload, toast]);
+  }, [handleVideoUpload, toast]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -154,15 +115,15 @@ export default function FileUpload({ onVideoUpload, folderId }: FileUploadProps)
   return (
     <div className="p-6 border-b border-border bg-card/50 h-full flex flex-col">
       <h2 className="text-lg font-medium mb-4">Upload Files</h2>
-      <div className="flex-1 grid grid-cols-2 gap-4">
+      <div className="flex-1 flex flex-col gap-4">
         {/* Video Upload */}
-        <Card className="h-full">
+        <Card className={uploadedVideoId ? "flex-shrink-0" : "flex-1"}>
           <CardContent className="p-0 h-full">
             <div
               className={`file-drop-zone h-full p-6 text-center cursor-pointer flex flex-col items-center justify-center space-y-4 border-2 border-dashed border-border rounded-lg transition-all duration-300 hover:border-primary hover:bg-primary/5 ${
                 isUploading ? 'opacity-50 pointer-events-none' : ''
               }`}
-              onDrop={(e) => handleFileDrop(e, 'video')}
+              onDrop={handleFileDrop}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onClick={() => {
@@ -195,52 +156,22 @@ export default function FileUpload({ onVideoUpload, folderId }: FileUploadProps)
           </CardContent>
         </Card>
         
-        {/* GPS Upload */}
-        <Card className="h-full">
-          <CardContent className="p-0 h-full">
-            <div
-              className={`file-drop-zone h-full p-6 text-center cursor-pointer flex flex-col items-center justify-center space-y-4 border-2 border-dashed border-border rounded-lg transition-all duration-300 hover:border-primary hover:bg-primary/5 ${
-                isUploading || !uploadedVideoId ? 'opacity-50 pointer-events-none' : ''
-              }`}
-              onDrop={(e) => handleFileDrop(e, 'gps')}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onClick={() => {
-                if (!uploadedVideoId) return;
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = '.csv,.json';
-                input.onchange = (e) => {
-                  const file = (e.target as HTMLInputElement).files?.[0];
-                  if (file) handleGpsUpload(file);
-                };
-                input.click();
-              }}
-              data-testid="gps-upload-zone"
-            >
-              <MapPin className="w-12 h-12 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">
-                  {!uploadedVideoId ? 'Upload video first' : 
-                   isUploading ? 'Uploading...' : 
-                   'Drop GPS file here'}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  or click to browse (CSV, JSON)
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* GPS Upload - only show after video upload */}
+        {uploadedVideoId && (
+          <div className="flex-1">
+            <h3 className="text-sm font-medium mb-2 text-muted-foreground">Optional: Upload GPS data to enable annotation creation</h3>
+            <GpsUpload videoId={uploadedVideoId} />
+          </div>
+        )}
       </div>
       
       <div className="mt-6 text-sm text-muted-foreground">
         <p className="mb-2"><strong>Instructions:</strong></p>
         <ol className="list-decimal list-inside space-y-1">
           <li>Upload a video file (MP4, AVI, MOV formats supported)</li>
-          <li>Upload GPS data file (CSV format: timestamp,lat,lon or JSON)</li>
-          <li>Start annotating by drawing bounding boxes on video frames</li>
-          <li>View annotations on the map and export to JSON when done</li>
+          <li>Optionally upload GPS data file (CSV format: timestamp,lat,lon or JSON) to enable annotation creation</li>
+          <li>You can view imported annotations without GPS data</li>
+          <li>To create new annotations, GPS data is required</li>
         </ol>
       </div>
     </div>

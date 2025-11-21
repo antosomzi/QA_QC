@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, X } from "lucide-react";
 import { getGPSForFrame } from "@/lib/gps-utils";
 import { 
   getCanvasCoordinates, 
@@ -61,6 +61,7 @@ interface VideoPlayerProps {
   onBoundingBoxUpdate: (id: string, updates: Partial<BoundingBox>) => void;
   selectedAnnotationId?: string | null;
   onAnnotationSelect: (id: string | null) => void;
+  onVideoDelete: () => void;
   folderId: string;
 }
 
@@ -76,6 +77,7 @@ export default function VideoPlayer({
   onBoundingBoxUpdate,
   selectedAnnotationId,
   onAnnotationSelect,
+  onVideoDelete,
   folderId,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -216,8 +218,6 @@ export default function VideoPlayer({
   }, [boundingBoxes, selectedBoundingBox, isMoving, isResizing]);
 
   const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
-    if (!gpsData) return;
-    
     const coords = getCanvasCoordinatesLocal(e);
     
     // Check if we're clicking on a bounding box handle
@@ -248,11 +248,13 @@ export default function VideoPlayer({
       }
     }
     
-    // If we clicked on empty space, start drawing a new bounding box
-    // But don't deselect yet - we'll do that in mouseUp if no drag happens
-    setIsDrawing(true);
-    setDrawStart(coords);
-    setCurrentBBox(null);
+    // If we clicked on empty space, only start drawing if GPS data is available
+    if (gpsData) {
+      // Start drawing a new bounding box
+      setIsDrawing(true);
+      setDrawStart(coords);
+      setCurrentBBox(null);
+    }
   }, [gpsData, getCanvasCoordinatesLocal, boundingBoxes, currentFrame, annotations, onAnnotationSelect]);
 
   const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
@@ -506,6 +508,18 @@ export default function VideoPlayer({
             onMouseUp={handleCanvasMouseUp}
             data-testid="annotation-canvas"
           />
+          
+          {/* Delete video button - top right corner */}
+          <Button
+            onClick={onVideoDelete}
+            variant="ghost"
+            size="sm"
+            className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-600/90 text-white rounded-md transition-colors z-10"
+            title="Remove video"
+            data-testid="button-delete-video"
+          >
+            <X className="w-5 h-5" />
+          </Button>
         </div>
         
         {/* Video Controls */}

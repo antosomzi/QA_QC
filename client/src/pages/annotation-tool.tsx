@@ -7,6 +7,7 @@ import MapPanel from "@/components/map-panel";
 import AnnotationList from "@/components/annotation-list";
 import BoundingBoxList from "@/components/bounding-box-list";
 import FileUpload from "@/components/file-upload";
+import GpsUpload from "@/components/gps-upload";
 import MapOnlyView from "@/components/map-only-view";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -39,7 +40,7 @@ export default function AnnotationTool() {
   const selectedVideo = videos.length > 0 ? videos[0] : null;
 
   // Fetch GPS data for selected video
-  const { data: gpsData, error: gpsDataError } = useQuery<GpsData | null>({
+  const { data: gpsData, error: gpsDataError, refetch: refetchGpsData } = useQuery<GpsData | null>({
     queryKey: ["video-gps", selectedVideo?.id],
     queryFn: async () => {
       if (!selectedVideo) return null;
@@ -47,7 +48,7 @@ export default function AnnotationTool() {
       const data = await response.json();
       // Si c'est un message d'erreur, on le traite comme une erreur
       if (data.message && data.message.includes('not found')) {
-        throw new Error(data.message);
+        return null; // Retourner null au lieu de throw pour permettre le mode visualisation
       }
       return data;
     },
@@ -127,6 +128,28 @@ export default function AnnotationTool() {
     // Rafraîchir la liste des vidéos du dossier
     refetchVideos();
   }, [toast, refetchVideos]);
+
+  const handleVideoDelete = useCallback(async () => {
+    if (!selectedVideo) return;
+    
+    try {
+      await apiRequest("DELETE", `/api/videos/${selectedVideo.id}`);
+      
+      // Forcer le refetch immédiat des vidéos
+      await refetchVideos();
+      
+      toast({
+        title: "Video deleted",
+        description: "Video and associated GPS data have been removed.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete video.",
+        variant: "destructive",
+      });
+    }
+  }, [selectedVideo, refetchVideos, toast]);
 
   const handleAnnotationCreate = useCallback(async (
     annotationData: Pick<Annotation, 'folderId' | 'videoId' | 'label' | 'gpsLat' | 'gpsLon'>,
@@ -471,50 +494,63 @@ export default function AnnotationTool() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
         {viewMode === "video" ? (
-          <div className="flex h-[calc(100vh-80px)]">
-            {/* Left Panel - Video Player and Bounding Box List */}
-            <div className="flex-1 bg-background border-r border-border flex flex-col">
-              {/* Video Player - use calculated height to leave space for BoundingBoxList */}
-              <div style={{ height: 'calc(100vh - 80px - 19vh)' }}>
-                {selectedVideo && gpsData && !gpsDataError ? (
-                  <VideoPlayer
-                    video={selectedVideo}
-                    gpsData={gpsData}
-                    annotations={annotations}
-                    boundingBoxes={boundingBoxes}
-                    currentFrame={currentFrame}
-                    onFrameChange={setCurrentFrame}
-                    onAnnotationCreate={handleAnnotationCreate}
-                    onBoundingBoxCreate={handleBoundingBoxCreate}
-                    onAnnotationUpdate={handleAnnotationUpdate}
-                    onBoundingBoxUpdate={handleBoundingBoxUpdate}
-                    selectedAnnotationId={selectedAnnotationId}
-                    onAnnotationSelect={handleVideoPlayerSelection}
-                    folderId={folderId}
-                  />
-                ) : (
-                  <FileUpload onVideoUpload={handleVideoUpload} folderId={folderId} />
+          <div className="flex h-[calc(100vh-80px)] flex-col">
+            {/* GPS Upload Banner - show if video exists but no GPS data */}
+            {selectedVideo && !gpsData && (
+              <div className="px-6 py-3 bg-card border-b border-border">
+                <GpsUpload 
+                  videoId={selectedVideo.id} 
+                  onUploadComplete={() => refetchGpsData()}
+                  compact={true}
+                />
+              </div>
+            )}
+            
+            <div className="flex flex-1 min-h-0">
+              {/* Left Panel - Video Player and Bounding Box List */}
+              <div className="flex-1 bg-background border-r border-border flex flex-col">
+                {/* Video Player - use calculated height to leave space for BoundingBoxList */}
+                <div style={{ height: 'calc(100% - 19vh)' }}>
+                  {selectedVideo ? (
+                    <VideoPlayer
+                      video={selectedVideo}
+                      gpsData={gpsData ?? undefined}
+                      annotations={annotations}
+                      boundingBoxes={boundingBoxes}
+                      currentFrame={currentFrame}
+                      onFrameChange={setCurrentFrame}
+                      onAnnotationCreate={handleAnnotationCreate}
+                      onBoundingBoxCreate={handleBoundingBoxCreate}
+                      onAnnotationUpdate={handleAnnotationUpdate}
+                      onBoundingBoxUpdate={handleBoundingBoxUpdate}
+                      selectedAnnotationId={selectedAnnotationId}
+                      onAnnotationSelect={handleVideoPlayerSelection}
+                      onVideoDelete={handleVideoDelete}
+                      folderId={folderId}
+                    />
+                  ) : (
+                    <FileUpload onVideoUpload={handleVideoUpload} folderId={folderId} />
+                  )}
+                </div>
+                
+                {/* Bounding Box List - only show when video is loaded */}
+                {selectedVideo && (
+                  <div className="h-[19vh] border-t border-border bg-card flex-shrink-0">
+                    <BoundingBoxList
+                      annotation={selectedAnnotation ?? null}
+                      boundingBoxes={boundingBoxes}
+                      currentFrame={currentFrame}
+                      videoFps={selectedVideo.fps ?? undefined}
+                      onFrameNavigate={handleFrameNavigate}
+                      onBoundingBoxDelete={handleBoundingBoxDelete}
+                      onAnnotationUpdate={handleAnnotationUpdate}
+                    />
+                  </div>
                 )}
               </div>
-              
-              {/* Bounding Box List - only show when video is loaded */}
-              {selectedVideo && gpsData && !gpsDataError && (
-                <div className="h-[19vh] border-t border-border bg-card flex-shrink-0">
-                  <BoundingBoxList
-                    annotation={selectedAnnotation ?? null}
-                    boundingBoxes={boundingBoxes}
-                    currentFrame={currentFrame}
-                    videoFps={selectedVideo.fps ?? undefined}
-                    onFrameNavigate={handleFrameNavigate}
-                    onBoundingBoxDelete={handleBoundingBoxDelete}
-                    onAnnotationUpdate={handleAnnotationUpdate}
-                  />
-                </div>
-              )}
-            </div>
 
-            {/* Right Panel - Map and Annotations */}
-            <div className="w-2/5 bg-card border-l border-border flex flex-col">
+              {/* Right Panel - Map and Annotations */}
+              <div className="w-2/5 bg-card border-l border-border flex flex-col">
               <div className="flex-1 relative">
                 <MapPanel
                   annotations={annotations}
@@ -525,16 +561,17 @@ export default function AnnotationTool() {
                 />
               </div>
               
-              {/* AnnotationList - larger than BoundingBoxList */}
-            <div className={`border-t border-border bg-background flex flex-col flex-shrink-0 h-[35vh]`}>
-              <div className="p-4 flex-1 min-h-0">
-                <AnnotationList
-                  annotations={annotations}
-                  selectedAnnotationId={selectedAnnotationId}
-                    onAnnotationSelect={handleAnnotationListSelection}
-                    onAnnotationUpdate={handleAnnotationUpdate}
-                    onAnnotationDelete={handleAnnotationDelete}
-                  />
+                {/* AnnotationList - larger than BoundingBoxList */}
+                <div className={`border-t border-border bg-background flex flex-col flex-shrink-0 h-[35vh]`}>
+                  <div className="p-4 flex-1 min-h-0">
+                    <AnnotationList
+                      annotations={annotations}
+                      selectedAnnotationId={selectedAnnotationId}
+                      onAnnotationSelect={handleAnnotationListSelection}
+                      onAnnotationUpdate={handleAnnotationUpdate}
+                      onAnnotationDelete={handleAnnotationDelete}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
