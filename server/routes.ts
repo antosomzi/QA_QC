@@ -208,7 +208,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const validatedData = insertVideoSchema.parse(videoData);
       const video = await storage.createVideo(validatedData);
-      
+
+      // Associer toutes les annotations du folder à la vidéo si elles n'ont pas de videoId
+      const annotations = await storage.getAnnotationsByFolderId(req.params.folderId);
+      for (const annotation of annotations) {
+        if (!annotation.videoId) {
+          await storage.updateAnnotation(annotation.id, { videoId: video.id });
+        }
+      }
+
       res.json(video);
     } catch (error) {
       if (error instanceof Error && error.message.includes("already contains a video")) {

@@ -1,5 +1,5 @@
 import { ColumnBaseConfig, ColumnDataType, sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, real, timestamp, jsonb, ExtraConfigColumn, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, real, timestamp, jsonb, ExtraConfigColumn, unique, bigint } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -56,8 +56,7 @@ export const boundingBoxes = pgTable("bounding_boxes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   annotationId: varchar("annotation_id").references(() => annotations.id, { onDelete: "cascade" }).notNull(),
   frameIndex: integer("frame_index").notNull(),
-  frameTimestampMs: integer("frame_timestamp_ms").notNull(),
-  bboxX: integer("bbox_x").notNull(),
+  frameTimestampMs: bigint("frame_timestamp_ms", { mode: "number" }).notNull(),  bboxX: integer("bbox_x").notNull(),
   bboxY: integer("bbox_y").notNull(),
   bboxWidth: integer("bbox_width").notNull(),
   bboxHeight: integer("bbox_height").notNull(),

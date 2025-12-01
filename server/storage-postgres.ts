@@ -300,7 +300,6 @@ export class PostgresStorage implements IStorage {
       const frameTs = frame.location && (frame.location.time ?? frame.location.timestamp)
         ? Math.round(frame.location.time ?? frame.location.timestamp)
         : 0;
-
       const signs = Array.isArray(frame.signs) ? frame.signs : [];
       for (const sign of signs) {
         const clusterId = sign.cluster_id;
@@ -339,7 +338,7 @@ export class PostgresStorage implements IStorage {
     }
 
     // Persist clusters as annotations + bounding boxes
-  for (const [, cluster] of Array.from(clusters.entries())) {
+  for (const [key, cluster] of Array.from(clusters.entries())) {
       // Skip clusters without a GPS location (annotations require gpsLat/gpsLon)
       if (cluster.gpsLat === undefined || cluster.gpsLon === undefined) {
         continue;
@@ -370,6 +369,8 @@ export class PostgresStorage implements IStorage {
         try {
           await this.createBoundingBox(insertBoundingBox);
         } catch (err) {
+          console.error("Erreur création BoundingBox:", err);
+          console.error("Données rejetées:", insertBoundingBox);
           // Ignore duplicate-frame errors (unique constraint) or other bbox insert issues per bbox
         }
       }
