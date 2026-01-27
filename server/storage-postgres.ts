@@ -100,11 +100,12 @@ export class PostgresStorage implements IStorage {
   // Video methods
   async createVideo(insertVideo: InsertVideo): Promise<Video> {
     // Check if folder already has a video
-  const existingVideos = await this.getVideosByFolderId(insertVideo.folderId as string);
+    const existingVideos = await this.getVideosByFolderId(insertVideo.folderId as string);
     if (existingVideos.length > 0) {
       throw new Error("Folder already contains a video. Each folder can only contain one video.");
     }
-    
+    // Force FPS to 30
+    insertVideo.fps = 30;
     const [video] = await this.db.insert(videos).values(insertVideo).returning();
     return video;
   }
@@ -238,7 +239,7 @@ export class PostgresStorage implements IStorage {
           videoInfo = {
             video_id: video.id,
             original_name: video.originalName,
-            fps: video.fps || 30,
+            fps: 25, // Always export 25 FPS
             duration_ms: (video.duration || 0) * 1000
           };
         }

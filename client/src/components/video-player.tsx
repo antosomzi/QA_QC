@@ -84,6 +84,10 @@ export default function VideoPlayer({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
+  // FIX: Ref pour bloquer les mises à jour pendant que la vidéo cherche une frame (seek)
+  // Remplace la logique fragile basée sur le temps
+  const isSeekingRef = useRef(false);
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -91,7 +95,10 @@ export default function VideoPlayer({
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [currentBBox, setCurrentBBox] = useState<DrawingBBox | null>(null);
-  const [isManualNavigation, setIsManualNavigation] = useState(false);
+  
+  // FIX: Suppression de isManualNavigation (plus nécessaire avec isSeekingRef)
+  // const [isManualNavigation, setIsManualNavigation] = useState(false);
+  
   const [isResizing, setIsResizing] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
@@ -106,8 +113,8 @@ export default function VideoPlayer({
 
   // Handle video time updates - source de vérité unique
   const handleTimeUpdate = useCallback(() => {
-    // Ignorer les mises à jour pendant la navigation manuelle
-    if (isManualNavigation) return;
+    // FIX: Ignorer les mises à jour pendant le seeking natif
+    if (isSeekingRef.current) return;
     
     if (videoRef.current && video.fps) {
       const time = videoRef.current.currentTime;
@@ -118,7 +125,18 @@ export default function VideoPlayer({
         onFrameChange(frame);
       }
     }
-  }, [video.fps, onFrameChange, isManualNavigation, currentFrame]);
+  }, [video.fps, onFrameChange, currentFrame]);
+
+  // FIX: Nouveaux handlers pour gérer le seeking natif proprement
+  const handleSeeking = useCallback(() => {
+    isSeekingRef.current = true;
+  }, []);
+
+  const handleSeeked = useCallback(() => {
+    isSeekingRef.current = false;
+    // Une fois le saut terminé, on force une mise à jour précise
+    handleTimeUpdate();
+  }, [handleTimeUpdate]);
 
   // Handle video metadata loaded
   const handleLoadedMetadata = useCallback(() => {
@@ -153,32 +171,35 @@ export default function VideoPlayer({
   const navigateToFrame = useCallback((targetFrame: number) => {
     if (!video.fps || !videoRef.current) return;
     
-    setIsManualNavigation(true);
+    // FIX: Simplification radicale - plus de setTimeout
     const targetTime = calculateTimeFromFrame(targetFrame, video.fps);
     
-    // Effectuer le seek
-    videoRef.current.currentTime = targetTime;
-    setCurrentTime(targetTime);
+    // Mise à jour immédiate de l'UI
     onFrameChange(targetFrame);
+    setCurrentTime(targetTime);
     
-    // Réactiver la mise à jour automatique après un court délai
-    setTimeout(() => setIsManualNavigation(false), 100);
+    // Commande à la vidéo
+    videoRef.current.currentTime = targetTime;
   }, [video.fps, onFrameChange]);
 
   // Effect to handle external frame navigation (from BoundingBoxList, etc.)
   useEffect(() => {
     if (!video.fps || !videoRef.current) return;
     
+    // FIX: Si la vidéo joue, on ne force pas la synchro depuis React pour éviter les boucles
+    if (isPlaying) return;
+
     // Only navigate if the external currentFrame differs from the video's current frame
-    const videoCurrentFrame = calculateFrameFromTime(videoRef.current.currentTime, video.fps);
-    if (currentFrame !== videoCurrentFrame && !isManualNavigation) {
-      setIsManualNavigation(true);
-      const targetTime = calculateTimeFromFrame(currentFrame, video.fps);
+    // FIX: Utilisation du temps comme source de vérité avec tolérance
+    const targetTime = calculateTimeFromFrame(currentFrame, video.fps);
+    const videoTime = videoRef.current.currentTime;
+    
+    // Tolérance de 50ms pour éviter le jitter dû aux calculs flottants
+    if (Math.abs(videoTime - targetTime) > 0.05) {
       videoRef.current.currentTime = targetTime;
       setCurrentTime(targetTime);
-      setTimeout(() => setIsManualNavigation(false), 100);
     }
-  }, [currentFrame, video.fps, isManualNavigation]);
+  }, [currentFrame, video.fps, isPlaying]);
 
   // Frame navigation avec correction du bug
   const goToPreviousFrame = useCallback(() => {
@@ -492,6 +513,8 @@ export default function VideoPlayer({
             className="w-full h-full object-contain rounded-md"
             src={`/api/videos/${video.id}/file`}
             onTimeUpdate={handleTimeUpdate}
+            onSeeking={handleSeeking} // FIX: Added
+            onSeeked={handleSeeked}   // FIX: Added
             onLoadedMetadata={handleLoadedMetadata}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
