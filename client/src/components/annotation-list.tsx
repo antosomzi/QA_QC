@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import { Edit, Trash2 } from "lucide-react";
@@ -23,12 +23,26 @@ export default function AnnotationList({
   onAnnotationDelete,
 }: AnnotationListProps) {
   const [editingAnnotation, setEditingAnnotation] = useState<Annotation | null>(null);
+  const selectedAnnotationRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to the selected annotation when it changes
+  useEffect(() => {
+    if (selectedAnnotationRef.current && selectedAnnotationId) {
+      // Using requestAnimationFrame to ensure DOM is updated before scrolling
+      requestAnimationFrame(() => {
+        selectedAnnotationRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center'
+        });
+      });
+    }
+  }, [selectedAnnotationId]);
 
   const formatTimestamp = (timestampMs: number | null | undefined) => {
     if (timestampMs === null || timestampMs === undefined) {
       return 'No timestamp';
     }
-    
+
     const totalSeconds = Math.floor(timestampMs / 1000);
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
@@ -48,7 +62,7 @@ export default function AnnotationList({
         <h3 className="text-lg font-medium">Annotations</h3>
         <div className="flex items-center space-x-2">
           <span className="text-xs text-muted-foreground">Total:</span>
-          <span 
+          <span
             className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded"
             data-testid="text-annotation-count"
           >
@@ -56,7 +70,7 @@ export default function AnnotationList({
           </span>
         </div>
       </div>
-      
+
       <div className="space-y-2 overflow-y-auto flex-1 min-h-0">
         {annotations.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
@@ -69,10 +83,11 @@ export default function AnnotationList({
             const signType = annotation.signType ? getSignTypeById(annotation.signType) : null;
             return (
             <div
+              ref={annotation.id === selectedAnnotationId ? selectedAnnotationRef : null}
               key={annotation.id}
               className={`p-3 rounded-md border cursor-pointer transition-colors ${
-                annotation.id === selectedAnnotationId 
-                  ? 'bg-primary/10 border-primary border-2 shadow-md' 
+                annotation.id === selectedAnnotationId
+                  ? 'bg-primary/10 border-primary border-2 shadow-md'
                   : 'bg-card border-border hover:bg-accent/50'
               }`}
               onClick={() => {
@@ -95,8 +110,8 @@ export default function AnnotationList({
                       loading="lazy"
                     />
                   )}
-                  <div 
-                    className="w-2 h-2 rounded-full flex-shrink-0" 
+                  <div
+                    className="w-2 h-2 rounded-full flex-shrink-0"
                     style={{ backgroundColor: annotationColor }}
                   ></div>
                   <div>
