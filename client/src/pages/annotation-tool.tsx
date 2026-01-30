@@ -384,6 +384,26 @@ export default function AnnotationTool() {
     }
   }, [folderId, toast]);
 
+  const handleDeleteAllAnnotations = useCallback(async () => {
+    if (window.confirm("Are you sure you want to delete ALL annotations in this folder? This action cannot be undone.")) {
+      try {
+        await apiRequest("DELETE", `/api/annotations/folder/${folderId}`);
+        refetchAnnotations(); // Refresh the annotations list
+
+        toast({
+          title: "Success",
+          description: "All annotations have been deleted successfully.",
+        });
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to delete annotations.",
+          variant: "destructive",
+        });
+      }
+    }
+  }, [folderId, refetchAnnotations, toast]);
+
   const handleImportAnnotations = useCallback(async (file: File) => {
     try {
       const text = await file.text();
@@ -480,12 +500,20 @@ export default function AnnotationTool() {
                 <span data-testid="button-import-json">Import JSON</span>
               </Button>
             </label>
-            <Button 
+            <Button
               onClick={handleExportAnnotations}
               size="sm"
               data-testid="button-export-json"
             >
               Export JSON
+            </Button>
+            <Button
+              onClick={handleDeleteAllAnnotations}
+              size="sm"
+              variant="destructive"
+              data-testid="button-delete-all-annotations"
+            >
+              Clear All Signs
             </Button>
           </div>
         </div>

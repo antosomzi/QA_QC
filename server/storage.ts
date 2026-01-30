@@ -52,6 +52,9 @@ export interface IStorage {
   // Export/Import methods
   exportAnnotationsByFolder(folderId: string): Promise<AnnotationExport | undefined>;
   importAnnotationsByFolder(folderId: string, data: any): Promise<void>;
+
+  // Delete methods
+  deleteAnnotationsByFolder(folderId: string): Promise<void>;
 }
 
 // Directly export the PostgreSQL storage instance

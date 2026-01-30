@@ -22,7 +22,7 @@ import {
   annotations,
   boundingBoxes
 } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { IStorage } from "./storage";
 
 export class PostgresStorage implements IStorage {
@@ -267,6 +267,28 @@ export class PostgresStorage implements IStorage {
     };
   }
 
+  async deleteAnnotationsByFolder(folderId: string): Promise<void> {
+    // First get all annotation IDs in this folder
+    const annotationIds = await this.db.select({ id: annotations.id })
+      .from(annotations)
+      .where(eq(annotations.folderId, folderId));
+
+    if (annotationIds.length > 0) {
+      // Delete all bounding boxes associated with these annotations
+      await this.db.delete(boundingBoxes)
+        .where(
+          inArray(
+            boundingBoxes.annotationId,
+            annotationIds.map(row => row.id)
+          )
+        );
+    }
+
+    // Then delete all annotations in this folder
+    await this.db.delete(annotations)
+      .where(eq(annotations.folderId, folderId));
+  }
+
   async importAnnotationsByFolder(folderId: string, data: any): Promise<void> {
     // Only support the new frame-by-frame detector output format.
     // Expected structure: { output: { frames: [...] } } or { frames: [...] }
@@ -339,11 +361,16 @@ export class PostgresStorage implements IStorage {
     }
 
     // Persist clusters as annotations + bounding boxes
-  for (const [key, cluster] of Array.from(clusters.entries())) {
+    for (const [key, cluster] of Array.from(clusters.entries())) {
       // Skip clusters without a GPS location (annotations require gpsLat/gpsLon)
       if (cluster.gpsLat === undefined || cluster.gpsLon === undefined) {
         continue;
       }
+
+      // Skip the first 2 bounding boxes of each cluster to avoid inconsistencies and bugs
+      // This addresses the issue where the first frames often have inaccurate detections
+      // that are spatially inconsistent with the rest of the frames for the same object
+      const filteredBboxes = cluster.bboxes.sort((a, b) => a.frameIndex - b.frameIndex).slice(2);
 
       // signType is the label we recorded from the detector's 'class' field
       const signType = cluster.label || undefined;
@@ -357,7 +384,7 @@ export class PostgresStorage implements IStorage {
 
       const createdAnnotation = await this.createAnnotation(insertAnnotation);
 
-      for (const bbox of cluster.bboxes) {
+      for (const bbox of filteredBboxes) {
         const insertBoundingBox: InsertBoundingBox = {
           annotationId: createdAnnotation.id,
           frameIndex: bbox.frameIndex,
