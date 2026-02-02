@@ -4,6 +4,7 @@ import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, X } from "lucide-
 import { getGPSForFrame } from "@/lib/gps-utils";
 import { 
   getCanvasCoordinates, 
+  mapCanvasPointToVideoPoint,
   findBoundingBoxAt, 
   formatTime, 
   calculateResizedBbox,
@@ -83,10 +84,7 @@ export default function VideoPlayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  
-  // FIX: Ref pour bloquer les mises à jour pendant que la vidéo cherche une frame (seek)
-  // Remplace la logique fragile basée sur le temps
-  const isSeekingRef = useRef(false);
+  const rvfcRef = useRef<number | null>(null); // For requestVideoFrameCallback loop
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -96,53 +94,100 @@ export default function VideoPlayer({
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [currentBBox, setCurrentBBox] = useState<DrawingBBox | null>(null);
   
-  // FIX: Suppression de isManualNavigation (plus nécessaire avec isSeekingRef)
-  // const [isManualNavigation, setIsManualNavigation] = useState(false);
-  
   const [isResizing, setIsResizing] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   const [moveStart, setMoveStart] = useState<{ x: number; y: number } | null>(null);
   const [selectedBoundingBox, setSelectedBoundingBox] = useState<BoundingBox | null>(null);
   const [initialBoundingBox, setInitialBoundingBox] = useState<BoundingBox | null>(null);
+  
+  // State for progress bar dragging
+  const [isDraggingProgress, setIsDraggingProgress] = useState(false);
+  const [previewTime, setPreviewTime] = useState<number | null>(null);
+  const dragTimeoutRef = useRef<number | null>(null);
 
-  // Memoize bounding boxes for current frame to avoid unnecessary re-renders
+  // CRITICAL: Always read directly from video element, not React state
+  // React state updates are async and can lag behind actual video position
+  // Use Math.floor + epsilon to avoid off-by-one errors from float precision
+  const getActualFrame = useCallback(() => {
+    if (!video.fps || !videoRef.current) return 0;
+    return Math.floor(videoRef.current.currentTime * video.fps + 0.001);
+  }, [video.fps]);
+
+  // Memoize bounding boxes for current frame
+  // Force re-calculation when currentTime changes to ensure sync
   const currentFrameBoundingBoxes = useMemo(() => {
-    return boundingBoxes.filter(bbox => bbox.frameIndex === currentFrame);
-  }, [boundingBoxes, currentFrame]);
+    const actualFrame = getActualFrame();
+    return boundingBoxes.filter(bbox => bbox.frameIndex === actualFrame);
+  }, [boundingBoxes, getActualFrame, currentTime]); // Add currentTime to trigger updates
 
-  // Handle video time updates - source de vérité unique
+  // Track last frame to avoid redundant updates
+  const lastFrameRef = useRef<number>(0);
+
+  // High-precision synchronization using requestVideoFrameCallback
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl || !video.fps) return;
+
+    // This function runs at every frame paint (60fps sync with video display)
+    const updateFrameLoop = (now: number, metadata: VideoFrameCallbackMetadata) => {
+      // metadata.mediaTime is the EXACT time of the frame displayed on screen
+      const exactTime = metadata.mediaTime;
+      // Use Math.floor + epsilon to avoid off-by-one frame errors from float precision
+      const exactFrame = Math.floor(exactTime * video.fps! + 0.001);
+
+      // Update local state for progress bar
+      setCurrentTime(exactTime);
+
+      // Update parent only if frame changed
+      if (exactFrame !== lastFrameRef.current) {
+        lastFrameRef.current = exactFrame;
+        onFrameChange(exactFrame);
+      }
+
+      // Continue loop for next frame if still playing
+      rvfcRef.current = videoEl.requestVideoFrameCallback(updateFrameLoop);
+    };
+
+    if (isPlaying) {
+      // Start the loop
+      rvfcRef.current = videoEl.requestVideoFrameCallback(updateFrameLoop);
+    } else {
+      // Stop the loop on pause
+      if (rvfcRef.current !== null) {
+        videoEl.cancelVideoFrameCallback(rvfcRef.current);
+        rvfcRef.current = null;
+      }
+    }
+
+    // Cleanup when component unmounts or isPlaying changes
+    return () => {
+      if (rvfcRef.current !== null && videoEl) {
+        videoEl.cancelVideoFrameCallback(rvfcRef.current);
+        rvfcRef.current = null;
+      }
+    };
+  }, [isPlaying, video.fps, onFrameChange]);
+
+  // Fallback time update handler for when video is paused or for metadata loading
   const handleTimeUpdate = useCallback(() => {
-    // FIX: Ignorer les mises à jour pendant le seeking natif
-    if (isSeekingRef.current) return;
-    
-    if (videoRef.current && video.fps) {
+    if (videoRef.current && video.fps && !isPlaying) {
       const time = videoRef.current.currentTime;
-      const frame = calculateFrameFromTime(time, video.fps);
       setCurrentTime(time);
-      // Ne mettre à jour la frame que si elle a vraiment changé
-      if (frame !== currentFrame) {
+      
+      // Use Math.floor + epsilon for consistency with requestVideoFrameCallback
+      const frame = Math.floor(time * video.fps + 0.001);
+      if (frame !== lastFrameRef.current) {
+        lastFrameRef.current = frame;
         onFrameChange(frame);
       }
     }
-  }, [video.fps, onFrameChange, currentFrame]);
-
-  // FIX: Nouveaux handlers pour gérer le seeking natif proprement
-  const handleSeeking = useCallback(() => {
-    isSeekingRef.current = true;
-  }, []);
-
-  const handleSeeked = useCallback(() => {
-    isSeekingRef.current = false;
-    // Une fois le saut terminé, on force une mise à jour précise
-    handleTimeUpdate();
-  }, [handleTimeUpdate]);
+  }, [video.fps, onFrameChange, isPlaying]);
 
   // Handle video metadata loaded
   const handleLoadedMetadata = useCallback(() => {
     if (videoRef.current) {
       setDuration(videoRef.current.duration);
-      // Sync mute state with video element
       setIsMuted(videoRef.current.muted);
     }
   }, []);
@@ -167,59 +212,39 @@ export default function VideoPlayer({
     }
   }, [isMuted]);
 
-  // Fonction helper pour la navigation frame par frame avec correction du décalage
-  const navigateToFrame = useCallback((targetFrame: number) => {
-    if (!video.fps || !videoRef.current) return;
-    
-    // FIX: Simplification radicale - plus de setTimeout
-    const targetTime = calculateTimeFromFrame(targetFrame, video.fps);
-    
-    // Mise à jour immédiate de l'UI
-    onFrameChange(targetFrame);
-    setCurrentTime(targetTime);
-    
-    // Commande à la vidéo
-    videoRef.current.currentTime = targetTime;
-  }, [video.fps, onFrameChange]);
-
-  // Effect to handle external frame navigation (from BoundingBoxList, etc.)
-  useEffect(() => {
-    if (!video.fps || !videoRef.current) return;
-    
-    // FIX: Si la vidéo joue, on ne force pas la synchro depuis React pour éviter les boucles
-    if (isPlaying) return;
-
-    // Only navigate if the external currentFrame differs from the video's current frame
-    // FIX: Utilisation du temps comme source de vérité avec tolérance
-    const targetTime = calculateTimeFromFrame(currentFrame, video.fps);
-    const videoTime = videoRef.current.currentTime;
-    
-    // Tolérance de 50ms pour éviter le jitter dû aux calculs flottants
-    if (Math.abs(videoTime - targetTime) > 0.05) {
-      videoRef.current.currentTime = targetTime;
-      setCurrentTime(targetTime);
-    }
-  }, [currentFrame, video.fps, isPlaying]);
-
-  // Frame navigation avec correction du bug
+  // Frame navigation - directly manipulate video.currentTime
   const goToPreviousFrame = useCallback(() => {
-    if (video.fps && currentFrame > 0) {
-      navigateToFrame(currentFrame - 1);
-    }
-  }, [currentFrame, video.fps, navigateToFrame]);
-
-  const goToNextFrame = useCallback(() => {
-    if (video.fps && duration) {
-      const totalFrames = Math.floor(duration * video.fps);
-      if (currentFrame < totalFrames - 1) {
-        navigateToFrame(currentFrame + 1);
+    if (video.fps && videoRef.current) {
+      const actualFrame = Math.floor(videoRef.current.currentTime * video.fps + 0.001);
+      if (actualFrame > 0) {
+        const targetTime = (actualFrame - 1) / video.fps;
+        videoRef.current.currentTime = targetTime;
+        setCurrentTime(targetTime);
+        onFrameChange(actualFrame - 1);
       }
     }
-  }, [currentFrame, video.fps, duration, navigateToFrame]);
+  }, [video.fps, videoRef, onFrameChange]);
+
+  const goToNextFrame = useCallback(() => {
+    if (video.fps && duration && videoRef.current) {
+      const actualFrame = Math.floor(videoRef.current.currentTime * video.fps + 0.001);
+      const totalFrames = Math.floor(duration * video.fps);
+      if (actualFrame < totalFrames - 1) {
+        const targetTime = (actualFrame + 1) / video.fps;
+        videoRef.current.currentTime = targetTime;
+        setCurrentTime(targetTime);
+        onFrameChange(actualFrame + 1);
+      }
+    }
+  }, [video.fps, duration, videoRef, onFrameChange]);
 
   // Canvas drawing functions
   const getCanvasCoordinatesLocal = useCallback((e: React.MouseEvent) => {
-    return getCanvasCoordinates(e, canvasRef);
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+
+    const canvasPoint = getCanvasCoordinates(e, canvasRef);
+    return mapCanvasPointToVideoPoint(canvas, canvasPoint);
   }, []);
 
   // Reset selectedBoundingBox when optimistic update has synchronized the data
@@ -238,11 +263,97 @@ export default function VideoPlayer({
     }
   }, [boundingBoxes, selectedBoundingBox, isMoving, isResizing]);
 
+  // Progress bar dragging handlers
+  const handleProgressMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingProgress(true);
+    
+    // Pause video while dragging for smoother experience
+    if (videoRef.current && !videoRef.current.paused) {
+      videoRef.current.pause();
+    }
+    
+    // Calculate initial preview time
+    if (!duration) return;
+    
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const targetTime = pos * duration;
+    
+    // Update visual preview immediately
+    setPreviewTime(targetTime);
+  }, [duration, videoRef]);
+
+  const handleProgressMouseMove = useCallback((e: MouseEvent) => {
+    if (!isDraggingProgress || !duration) return;
+    
+    const progressBar = document.querySelector('[data-progress-bar]') as HTMLElement;
+    if (!progressBar) return;
+    
+    const rect = progressBar.getBoundingClientRect();
+    const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const targetTime = pos * duration;
+    
+    // Update visual preview immediately (no lag)
+    setPreviewTime(targetTime);
+    
+    // Debounce actual video seek to avoid buffering issues
+    if (dragTimeoutRef.current !== null) {
+      window.clearTimeout(dragTimeoutRef.current);
+    }
+    
+    dragTimeoutRef.current = window.setTimeout(() => {
+      if (videoRef.current) {
+        videoRef.current.currentTime = targetTime;
+        setCurrentTime(targetTime);
+      }
+    }, 50);
+  }, [isDraggingProgress, duration, videoRef]);
+
+  const handleProgressMouseUp = useCallback(() => {
+    if (!isDraggingProgress) return;
+    
+    // Clear any pending timeout
+    if (dragTimeoutRef.current !== null) {
+      window.clearTimeout(dragTimeoutRef.current);
+    }
+    
+    // Final seek to exact position
+    const finalTime = previewTime ?? currentTime;
+    if (videoRef.current) {
+      videoRef.current.currentTime = finalTime;
+      setCurrentTime(finalTime);
+    }
+    
+    setIsDraggingProgress(false);
+    setPreviewTime(null);
+    
+    // Sync frame state after dragging ends
+    if (videoRef.current && video.fps) {
+      const targetFrame = Math.floor(finalTime * video.fps + 0.001);
+      onFrameChange(targetFrame);
+    }
+  }, [isDraggingProgress, previewTime, currentTime, videoRef, video.fps, onFrameChange]);
+
+  // Add/remove mouse event listeners for dragging
+  useEffect(() => {
+    if (isDraggingProgress) {
+      window.addEventListener('mousemove', handleProgressMouseMove);
+      window.addEventListener('mouseup', handleProgressMouseUp);
+      
+      return () => {
+        window.removeEventListener('mousemove', handleProgressMouseMove);
+        window.removeEventListener('mouseup', handleProgressMouseUp);
+      };
+    }
+  }, [isDraggingProgress, handleProgressMouseMove, handleProgressMouseUp]);
+
   const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
     const coords = getCanvasCoordinatesLocal(e);
+    const actualFrame = getActualFrame();
     
     // Check if we're clicking on a bounding box handle
-    const result = findBoundingBoxAt(coords.x, coords.y, boundingBoxes, currentFrame, 10);
+    const result = findBoundingBoxAt(coords.x, coords.y, boundingBoxes, actualFrame, 10);
     
     if (result) {
       const { boundingBox, handle } = result;
@@ -276,10 +387,11 @@ export default function VideoPlayer({
       setDrawStart(coords);
       setCurrentBBox(null);
     }
-  }, [gpsData, getCanvasCoordinatesLocal, boundingBoxes, currentFrame, annotations, onAnnotationSelect]);
+  }, [gpsData, getCanvasCoordinatesLocal, boundingBoxes, annotations, onAnnotationSelect, getActualFrame]);
 
   const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
     const coords = getCanvasCoordinatesLocal(e);
+    const actualFrame = getActualFrame();
     
     if (isMoving && selectedBoundingBox && moveStart) {
       // Move the bounding box
@@ -325,12 +437,12 @@ export default function VideoPlayer({
     }
     
     // Update cursor based on what's under the mouse
-    const result = findBoundingBoxAt(coords.x, coords.y, boundingBoxes, currentFrame, 10);
+    const result = findBoundingBoxAt(coords.x, coords.y, boundingBoxes, actualFrame, 10);
     if (canvasRef.current) {
       const handle = result?.handle || null;
       setCursorForHandle(canvasRef.current, handle);
     }
-  }, [isDrawing, drawStart, isMoving, isResizing, selectedBoundingBox, moveStart, resizeHandle, boundingBoxes, currentFrame, getCanvasCoordinatesLocal]);
+  }, [isDrawing, drawStart, isMoving, isResizing, selectedBoundingBox, moveStart, resizeHandle, boundingBoxes, getCanvasCoordinatesLocal, getActualFrame]);
 
   const handleCanvasMouseUp = useCallback((e: React.MouseEvent) => {
     
@@ -365,22 +477,24 @@ export default function VideoPlayer({
     }
     
     if (isDrawing && currentBBox && gpsData && video.fps) {
+      const actualFrame = getActualFrame();
+      
       // Check if the bounding box has minimum size (avoid point-like boxes)
       if (isValidBoundingBoxSize(currentBBox)) {
         
         // Check if there's a selected annotation and no bounding box for it on the current frame
         const selectedAnnotation = selectedAnnotationId ? annotations.find(ann => ann.id === selectedAnnotationId) : null;
         const hasSelectedAnnotationBboxOnCurrentFrame = selectedAnnotation ? 
-          boundingBoxes.some(bbox => bbox.annotationId === selectedAnnotation.id && bbox.frameIndex === currentFrame) : 
+          boundingBoxes.some(bbox => bbox.annotationId === selectedAnnotation.id && bbox.frameIndex === actualFrame) : 
           false;
         
         if (selectedAnnotation && !hasSelectedAnnotationBboxOnCurrentFrame) {
           // Add a bounding box to the existing selected annotation
-          const boundingBoxData = createBoundingBoxData(currentFrame, currentTime, currentBBox);
+          const boundingBoxData = createBoundingBoxData(actualFrame, currentTime, currentBBox);
           onBoundingBoxCreate(selectedAnnotation.id, boundingBoxData);
         } else {
           // Create a new annotation with bounding box
-          const gpsPoint = getGPSForFrame(gpsData.data as any[], currentFrame, video.fps);
+          const gpsPoint = getGPSForFrame(gpsData.data as any[], actualFrame, video.fps);
           if (!gpsPoint) {
             console.warn("No GPS data available for current frame");
             setIsDrawing(false);
@@ -398,7 +512,7 @@ export default function VideoPlayer({
             gpsLon: gpsPoint.lon,
           };
 
-          const boundingBoxData = createBoundingBoxData(currentFrame, currentTime, currentBBox);
+          const boundingBoxData = createBoundingBoxData(actualFrame, currentTime, currentBBox);
 
           // Call the function with separated data
           onAnnotationCreate(annotationData, boundingBoxData);
@@ -430,7 +544,7 @@ export default function VideoPlayer({
     setMoveStart(null);
     setResizeHandle(null);
     setInitialBoundingBox(null);
-  }, [isDrawing, currentBBox, gpsData, video, currentFrame, currentTime, onAnnotationCreate, onBoundingBoxCreate, folderId, isMoving, isResizing, selectedBoundingBox, onBoundingBoxUpdate, getCanvasCoordinatesLocal, onAnnotationSelect, selectedAnnotationId, annotations, boundingBoxes, initialBoundingBox]);
+  }, [isDrawing, currentBBox, gpsData, video, currentTime, onAnnotationCreate, onBoundingBoxCreate, folderId, isMoving, isResizing, selectedBoundingBox, onBoundingBoxUpdate, getCanvasCoordinatesLocal, onAnnotationSelect, selectedAnnotationId, annotations, boundingBoxes, initialBoundingBox, getActualFrame]);
 
   // Draw annotations on canvas
   useEffect(() => {
@@ -513,8 +627,6 @@ export default function VideoPlayer({
             className="w-full h-full object-contain rounded-md"
             src={`/api/videos/${video.id}/file`}
             onTimeUpdate={handleTimeUpdate}
-            onSeeking={handleSeeking} // FIX: Added
-            onSeeked={handleSeeked}   // FIX: Added
             onLoadedMetadata={handleLoadedMetadata}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
@@ -566,30 +678,33 @@ export default function VideoPlayer({
               {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </Button>
             <span className="text-sm text-muted-foreground" data-testid="text-current-time">
-              {formatTime(currentTime)}
+              {formatTime(isDraggingProgress && previewTime !== null ? previewTime : currentTime)}
             </span>
             <div 
-              className="flex-1 h-2 bg-muted rounded-full relative cursor-pointer"
-              onClick={(e) => {
-                if (!videoRef.current || !duration) return;
-                
-                const rect = e.currentTarget.getBoundingClientRect();
-                const pos = (e.clientX - rect.left) / rect.width;
-                const targetTime = pos * duration;
-                
-                // Use the existing navigateToFrame function for precise frame seeking
-                if (video.fps) {
-                  const targetFrame = calculateFrameFromTime(targetTime, video.fps);
-                  navigateToFrame(targetFrame);
-                } else {
-                  throw new Error("Video FPS is not defined");
-                }
-              }}
+              data-progress-bar
+              className="flex-1 h-2 bg-muted rounded-full relative cursor-pointer select-none group"
+              onMouseDown={handleProgressMouseDown}
             >
+              {/* Progress bar fill */}
               <div 
-                className="absolute top-0 left-0 h-full bg-primary rounded-full" 
-                style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}
+                className="absolute top-0 left-0 h-full bg-primary rounded-full pointer-events-none" 
+                style={{ 
+                  width: `${duration ? ((isDraggingProgress && previewTime !== null ? previewTime : currentTime) / duration) * 100 : 0}%`,
+                  transition: isDraggingProgress ? 'none' : 'width 0.1s ease-out'
+                }}
                 data-testid="progress-bar"
+              />
+              
+              {/* Draggable thumb (round handle) */}
+              <div 
+                className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full shadow-lg pointer-events-none ${
+                  isDraggingProgress ? 'scale-125' : 'scale-0 group-hover:scale-100'
+                }`}
+                style={{ 
+                  left: `${duration ? ((isDraggingProgress && previewTime !== null ? previewTime : currentTime) / duration) * 100 : 0}%`, 
+                  marginLeft: '-8px',
+                  transition: isDraggingProgress ? 'none' : 'transform 0.2s ease-out'
+                }}
               />
             </div>
             <span className="text-sm text-muted-foreground" data-testid="text-total-time">
@@ -602,7 +717,7 @@ export default function VideoPlayer({
             <div className="flex items-center space-x-2">
               <span className="text-muted-foreground">Frame:</span>
               <span className="text-foreground font-mono" data-testid="text-current-frame">
-                {currentFrame}
+                {video.fps ? Math.floor(currentTime * video.fps + 0.001) : 0}
               </span>
               <span className="text-muted-foreground">/</span>
               <span className="text-muted-foreground font-mono" data-testid="text-total-frames">
@@ -614,7 +729,7 @@ export default function VideoPlayer({
                 onClick={goToPreviousFrame} 
                 size="sm" 
                 variant="secondary"
-                disabled={currentFrame <= 0}
+                disabled={video.fps ? getActualFrame() <= 0 : true}
                 data-testid="button-previous-frame"
               >
                 <SkipBack className="w-4 h-4 mr-1" />
@@ -624,7 +739,7 @@ export default function VideoPlayer({
                 onClick={goToNextFrame} 
                 size="sm" 
                 variant="secondary"
-                disabled={currentFrame >= totalFrames - 1}
+                disabled={video.fps && duration ? getActualFrame() >= totalFrames - 1 : true}
                 data-testid="button-next-frame"
               >
                 Frame

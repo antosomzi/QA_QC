@@ -17,7 +17,10 @@ const upload = multer({
         }
   }),
   limits: {
-    fileSize: 500 * 1024 * 1024, // 500MB limit
+  // Increase single-file upload limit to 15GB to allow very large video uploads.
+  // Note: reverse proxies (nginx, caddy, etc.) must also allow large bodies (client_max_body_size).
+  // Example: set nginx `client_max_body_size 16G;` to give a small overhead margin.
+  fileSize: 15 * 1024 * 1024 * 1024, // 15GB limit
   },
 });
 
@@ -507,6 +510,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true, message: "Annotations imported successfully" });
     } catch (error) {
       res.status(400).json({ message: error instanceof Error ? error.message : "Failed to import annotations" });
+    }
+  });
+
+  // Route to delete all annotations and their bounding boxes for a folder
+  app.delete("/api/annotations/folder/:folderId", async (req, res) => {
+    try {
+      await storage.deleteAnnotationsByFolder(req.params.folderId);
+      res.json({ success: true, message: "All annotations deleted successfully" });
+    } catch (error) {
+      res.status(500).json({ message: error instanceof Error ? error.message : "Failed to delete annotations" });
     }
   });
 

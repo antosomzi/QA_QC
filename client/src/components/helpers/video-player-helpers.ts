@@ -41,6 +41,67 @@ export function getCanvasCoordinates(
 }
 
 /**
+ * Compute letterbox-aware transform parameters for a canvas that is scaled
+ * via CSS (object-contain behavior on the underlying video).
+ */
+function getLetterboxTransform(canvas: HTMLCanvasElement) {
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) {
+    return {
+      scaleAdjustX: 1,
+      scaleAdjustY: 1,
+      offsetCanvasX: 0,
+      offsetCanvasY: 0,
+    };
+  }
+
+  // Current CSS scaling from canvas space to display space
+  const sx = rect.width / canvas.width;
+  const sy = rect.height / canvas.height;
+
+  // object-contain uniform scale (the actual displayed video scale)
+  const s = Math.min(sx, sy);
+
+  // Display-space offsets due to letterboxing
+  const displayOffsetX = (rect.width - canvas.width * s) / 2;
+  const displayOffsetY = (rect.height - canvas.height * s) / 2;
+
+  // Convert display-space offsets back into canvas-space offsets
+  const offsetCanvasX = displayOffsetX / sx;
+  const offsetCanvasY = displayOffsetY / sy;
+
+  // Scale adjustment from video pixel space to canvas space
+  const scaleAdjustX = s / sx;
+  const scaleAdjustY = s / sy;
+
+  return { scaleAdjustX, scaleAdjustY, offsetCanvasX, offsetCanvasY };
+}
+
+/** Map a point from VIDEO pixel space to CANVAS space (letterbox-aware). */
+export function mapVideoPointToCanvasPoint(
+  canvas: HTMLCanvasElement,
+  point: { x: number; y: number }
+): { x: number; y: number } {
+  const { scaleAdjustX, scaleAdjustY, offsetCanvasX, offsetCanvasY } = getLetterboxTransform(canvas);
+  return {
+    x: offsetCanvasX + point.x * scaleAdjustX,
+    y: offsetCanvasY + point.y * scaleAdjustY,
+  };
+}
+
+/** Map a point from CANVAS space to VIDEO pixel space (letterbox-aware). */
+export function mapCanvasPointToVideoPoint(
+  canvas: HTMLCanvasElement,
+  point: { x: number; y: number }
+): { x: number; y: number } {
+  const { scaleAdjustX, scaleAdjustY, offsetCanvasX, offsetCanvasY } = getLetterboxTransform(canvas);
+  return {
+    x: (point.x - offsetCanvasX) / (scaleAdjustX || 1),
+    y: (point.y - offsetCanvasY) / (scaleAdjustY || 1),
+  };
+}
+
+/**
  * Checks if coordinates are near a bounding box's edge or corner
  */
 export function getBoundingBoxHandle(
@@ -297,6 +358,7 @@ export function isValidBoundingBoxSize(bbox: { width: number; height: number }, 
 
 /**
  * Creates bounding box data object for API calls
+ * Uses actual video currentTime for precise timestamp to avoid drift
  */
 export function createBoundingBoxData(
   currentFrame: number,
@@ -327,6 +389,13 @@ export function drawBoundingBox(
     isDashed?: boolean;
   } = {}
 ): void {
+  const canvas = ctx.canvas;
+  const topLeft = mapVideoPointToCanvasPoint(canvas, { x: bbox.bboxX, y: bbox.bboxY });
+  const bottomRight = mapVideoPointToCanvasPoint(canvas, { x: bbox.bboxX + bbox.bboxWidth, y: bbox.bboxY + bbox.bboxHeight });
+  const drawX = topLeft.x;
+  const drawY = topLeft.y;
+  const drawW = bottomRight.x - topLeft.x;
+  const drawH = bottomRight.y - topLeft.y;
   const annotationColor = getAnnotationColor(annotations, annotation.id);
   const strokeColor = isSelected ? '#FF6B6B' : annotationColor;
   const lineWidth = isSelected ? 6 : 4;
@@ -338,7 +407,7 @@ export function drawBoundingBox(
     ctx.setLineDash([5, 5]);
   }
   
-  ctx.strokeRect(bbox.bboxX, bbox.bboxY, bbox.bboxWidth, bbox.bboxHeight);
+  ctx.strokeRect(drawX, drawY, drawW, drawH);
   
   if (options.isDashed) {
     ctx.setLineDash([]);
@@ -347,7 +416,7 @@ export function drawBoundingBox(
   // Draw label
   ctx.fillStyle = strokeColor;
   ctx.font = isSelected ? 'bold 14px Inter' : '14px Inter';
-  ctx.fillText(annotation.label, bbox.bboxX, bbox.bboxY - 5);
+  ctx.fillText(annotation.label, drawX, drawY - 5);
 }
 
 /**
@@ -360,12 +429,16 @@ export function drawBoundingBoxHandles(
   color: string = '#FF6B6B'
 ): void {
   ctx.fillStyle = color;
+
+  const canvas = ctx.canvas;
+  const topLeft = mapVideoPointToCanvasPoint(canvas, { x: bbox.bboxX, y: bbox.bboxY });
+  const bottomRight = mapVideoPointToCanvasPoint(canvas, { x: bbox.bboxX + bbox.bboxWidth, y: bbox.bboxY + bbox.bboxHeight });
   
   const corners = [
-    { x: bbox.bboxX, y: bbox.bboxY }, // nw
-    { x: bbox.bboxX + bbox.bboxWidth, y: bbox.bboxY }, // ne
-    { x: bbox.bboxX, y: bbox.bboxY + bbox.bboxHeight }, // sw
-    { x: bbox.bboxX + bbox.bboxWidth, y: bbox.bboxY + bbox.bboxHeight } // se
+    { x: topLeft.x, y: topLeft.y }, // nw
+    { x: bottomRight.x, y: topLeft.y }, // ne
+    { x: topLeft.x, y: bottomRight.y }, // sw
+    { x: bottomRight.x, y: bottomRight.y } // se
   ];
   
   corners.forEach(corner => {
@@ -386,9 +459,17 @@ export function drawTemporaryBoundingBox(
   bbox: { x: number; y: number; width: number; height: number },
   color: string = '#FF6B6B'
 ): void {
+  const canvas = ctx.canvas;
+  const topLeft = mapVideoPointToCanvasPoint(canvas, { x: bbox.x, y: bbox.y });
+  const bottomRight = mapVideoPointToCanvasPoint(canvas, { x: bbox.x + bbox.width, y: bbox.y + bbox.height });
+  const drawX = topLeft.x;
+  const drawY = topLeft.y;
+  const drawW = bottomRight.x - topLeft.x;
+  const drawH = bottomRight.y - topLeft.y;
+
   ctx.strokeStyle = color;
   ctx.lineWidth = 5;
   ctx.setLineDash([5, 5]);
-  ctx.strokeRect(bbox.x, bbox.y, bbox.width, bbox.height);
+  ctx.strokeRect(drawX, drawY, drawW, drawH);
   ctx.setLineDash([]);
 }

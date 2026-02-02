@@ -104,8 +104,8 @@ export class PostgresStorage implements IStorage {
     if (existingVideos.length > 0) {
       throw new Error("Folder already contains a video. Each folder can only contain one video.");
     }
-    // Force FPS to 30
-    insertVideo.fps = 30;
+    // Use actual FPS from video metadata, don't force it
+    // Old behavior: insertVideo.fps = 30; (caused drift with 29.99 fps videos)
     const [video] = await this.db.insert(videos).values(insertVideo).returning();
     return video;
   }
