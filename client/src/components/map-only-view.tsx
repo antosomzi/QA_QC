@@ -3,10 +3,11 @@ import MapPanel from "./map-panel";
 import AnnotationList from "./annotation-list";
 import { Button } from "@/components/ui/button";
 import { Play, MapPin, List, ZoomIn, ZoomOut, X } from "lucide-react";
-import type { Annotation } from "@shared/schema";
+import type { Annotation, BoundingBox } from "@shared/schema";
 
 interface MapOnlyViewProps {
   annotations: Annotation[];
+  boundingBoxes: BoundingBox[];
   selectedAnnotationId?: string | null;
   onAnnotationSelect: (id: string | null) => void;
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void;
@@ -16,6 +17,7 @@ interface MapOnlyViewProps {
 
 export default function MapOnlyView({
   annotations,
+  boundingBoxes,
   selectedAnnotationId,
   onAnnotationSelect,
   onAnnotationUpdate,
@@ -113,6 +115,7 @@ export default function MapOnlyView({
               <div className="p-4 space-y-2">
                 <AnnotationList
                   annotations={annotations}
+                  boundingBoxes={boundingBoxes}
                   selectedAnnotationId={selectedAnnotationId}
                   onAnnotationSelect={handleAnnotationListSelection}
                   onAnnotationUpdate={onAnnotationUpdate}

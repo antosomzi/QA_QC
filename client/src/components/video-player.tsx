@@ -1,6 +1,6 @@
-import { useRef, useEffect, useState, useCallback, useMemo } from "react";
+import { useRef, useEffect, useState, useCallback, useMemo, forwardRef, useImperativeHandle } from "react";
 import { Button } from "@/components/ui/button";
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, X } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, X } from "lucide-react";
 import { getGPSForFrame } from "@/lib/gps-utils";
 import { 
   getCanvasCoordinates, 
@@ -66,7 +66,11 @@ interface VideoPlayerProps {
   folderId: string;
 }
 
-export default function VideoPlayer({
+export interface VideoPlayerHandle {
+  seekToFrame: (frame: number) => void;
+}
+
+const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
   video,
   gpsData,
   annotations,
@@ -80,14 +84,15 @@ export default function VideoPlayer({
   onAnnotationSelect,
   onVideoDelete,
   folderId,
-}: VideoPlayerProps) {
+}: VideoPlayerProps, ref) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const rvfcRef = useRef<number | null>(null); // For requestVideoFrameCallback loop
 
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+  const [playbackRate, setPlaybackRate] = useState(1);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -106,13 +111,52 @@ export default function VideoPlayer({
   const [previewTime, setPreviewTime] = useState<number | null>(null);
   const dragTimeoutRef = useRef<number | null>(null);
 
+  // REF MIRROR: Always contains the freshest data for immediate access in rVFC loop
+  // This avoids "stale closure" issues where the draw function reads old state
+  const drawingDataRef = useRef({
+    boundingBoxes,
+    annotations,
+    selectedAnnotationId,
+    selectedBoundingBox,
+    currentBBox,
+    isMoving,
+    isResizing
+  });
+
+  // Keep the ref mirror synchronized with React state
+  useEffect(() => {
+    drawingDataRef.current = {
+      boundingBoxes,
+      annotations,
+      selectedAnnotationId,
+      selectedBoundingBox,
+      currentBBox,
+      isMoving,
+      isResizing
+    };
+  }, [boundingBoxes, annotations, selectedAnnotationId, selectedBoundingBox, currentBBox, isMoving, isResizing]);
+
+  // FPS is now extracted from video file at upload time using ffprobe
+  // No frontend correction needed - we trust the database value
+  const fps = video.fps || 30;
+
   // CRITICAL: Always read directly from video element, not React state
   // React state updates are async and can lag behind actual video position
   // Use Math.floor + epsilon to avoid off-by-one errors from float precision
   const getActualFrame = useCallback(() => {
-    if (!video.fps || !videoRef.current) return 0;
-    return Math.floor(videoRef.current.currentTime * video.fps + 0.001);
-  }, [video.fps]);
+    if (!fps || !videoRef.current) return 0;
+    return Math.floor(videoRef.current.currentTime * fps + 0.001);
+  }, [fps]);
+
+  const seekToFrame = useCallback((frame: number) => {
+    if (!videoRef.current || !fps) return;
+    const targetTime = calculateTimeFromFrame(frame, fps);
+    videoRef.current.currentTime = targetTime;
+    setCurrentTime(targetTime);
+    lastFrameRef.current = frame;
+  }, [fps]);
+
+  useImperativeHandle(ref, () => ({ seekToFrame }), [seekToFrame]);
 
   // Memoize bounding boxes for current frame
   // Force re-calculation when currentTime changes to ensure sync
@@ -124,19 +168,77 @@ export default function VideoPlayer({
   // Track last frame to avoid redundant updates
   const lastFrameRef = useRef<number>(0);
 
+  // Direct canvas draw function (bypasses React state for speed)
+  // Reads from drawingDataRef for ZERO closure lag - no dependencies needed
+  const drawCanvasForFrame = useCallback((frameIndex: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Read fresh data from ref (not from stale closure)
+    const { 
+      boundingBoxes: boxes, 
+      annotations: annos, 
+      selectedAnnotationId: selId,
+      selectedBoundingBox: selBox,
+      currentBBox: curBox,
+      isMoving: moving,
+      isResizing: resizing
+    } = drawingDataRef.current;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Get bboxes for this frame directly
+    const frameBboxes = boxes.filter(bbox => bbox.frameIndex === frameIndex);
+    
+    // Draw existing bounding boxes for current frame
+    frameBboxes.forEach(bbox => {
+      const annotation = annos.find(ann => ann.id === bbox.annotationId);
+      if (!annotation) return;
+      
+      const bboxToRender = (selBox && bbox.id === selBox.id) ? selBox : bbox;
+      const isSelected = annotation.id === selId;
+      
+      drawBoundingBox(ctx, bboxToRender, annotation, annos, isSelected);
+    });
+    
+    // Draw current bounding box being drawn
+    if (curBox) {
+      drawTemporaryBoundingBox(ctx, curBox);
+    }
+    
+    // Draw handles for selected annotation
+    if (selId && !moving && !resizing) {
+      const selectedBbox = frameBboxes.find(bbox => {
+        const annotation = annos.find(ann => ann.id === bbox.annotationId);
+        return annotation?.id === selId;
+      });
+      
+      if (selectedBbox) {
+        drawBoundingBoxHandles(ctx, selectedBbox);
+      }
+    }
+  }, []); // EMPTY dependencies - reads from ref, not closure
+
   // High-precision synchronization using requestVideoFrameCallback
   useEffect(() => {
     const videoEl = videoRef.current;
-    if (!videoEl || !video.fps) return;
+    if (!videoEl || !fps) return;
 
     // This function runs at every frame paint (60fps sync with video display)
     const updateFrameLoop = (now: number, metadata: VideoFrameCallbackMetadata) => {
       // metadata.mediaTime is the EXACT time of the frame displayed on screen
       const exactTime = metadata.mediaTime;
       // Use Math.floor + epsilon to avoid off-by-one frame errors from float precision
-      const exactFrame = Math.floor(exactTime * video.fps! + 0.001);
+      const exactFrame = Math.floor(exactTime * fps + 0.001);
 
-      // Update local state for progress bar
+      // IMMEDIATE: Draw canvas directly in the callback (no React lag)
+      drawCanvasForFrame(exactFrame);
+
+      // Update local state for progress bar (can lag, that's OK)
       setCurrentTime(exactTime);
 
       // Update parent only if frame changed
@@ -167,30 +269,33 @@ export default function VideoPlayer({
         rvfcRef.current = null;
       }
     };
-  }, [isPlaying, video.fps, onFrameChange]);
+  }, [isPlaying, fps, onFrameChange, drawCanvasForFrame]);
 
   // Fallback time update handler for when video is paused or for metadata loading
   const handleTimeUpdate = useCallback(() => {
-    if (videoRef.current && video.fps && !isPlaying) {
+    if (videoRef.current && fps && !isPlaying) {
       const time = videoRef.current.currentTime;
       setCurrentTime(time);
       
       // Use Math.floor + epsilon for consistency with requestVideoFrameCallback
-      const frame = Math.floor(time * video.fps + 0.001);
+      const frame = Math.floor(time * fps + 0.001);
       if (frame !== lastFrameRef.current) {
         lastFrameRef.current = frame;
         onFrameChange(frame);
       }
     }
-  }, [video.fps, onFrameChange, isPlaying]);
+  }, [fps, onFrameChange, isPlaying]);
+
 
   // Handle video metadata loaded
   const handleLoadedMetadata = useCallback(() => {
     if (videoRef.current) {
       setDuration(videoRef.current.duration);
-      setIsMuted(videoRef.current.muted);
+      videoRef.current.muted = true;
+      setIsMuted(true);
+      videoRef.current.playbackRate = playbackRate;
     }
-  }, []);
+  }, [playbackRate]);
 
   // Play/pause controls
   const togglePlayPause = useCallback(() => {
@@ -204,39 +309,42 @@ export default function VideoPlayer({
     }
   }, [isPlaying]);
 
-  // Mute/unmute controls
-  const toggleMute = useCallback(() => {
-    if (videoRef.current) {
-      videoRef.current.muted = !isMuted;
-      setIsMuted(!isMuted);
-    }
-  }, [isMuted]);
+  const cyclePlaybackRate = useCallback(() => {
+    if (!videoRef.current) return;
+
+    const rates = [0.5, 1, 1.5, 2];
+    const currentIndex = rates.indexOf(playbackRate);
+    const nextRate = rates[(currentIndex + 1) % rates.length];
+
+    videoRef.current.playbackRate = nextRate;
+    setPlaybackRate(nextRate);
+  }, [playbackRate]);
 
   // Frame navigation - directly manipulate video.currentTime
   const goToPreviousFrame = useCallback(() => {
-    if (video.fps && videoRef.current) {
-      const actualFrame = Math.floor(videoRef.current.currentTime * video.fps + 0.001);
+    if (fps && videoRef.current) {
+      const actualFrame = Math.floor(videoRef.current.currentTime * fps + 0.001);
       if (actualFrame > 0) {
-        const targetTime = (actualFrame - 1) / video.fps;
+        const targetTime = (actualFrame - 1) / fps;
         videoRef.current.currentTime = targetTime;
         setCurrentTime(targetTime);
         onFrameChange(actualFrame - 1);
       }
     }
-  }, [video.fps, videoRef, onFrameChange]);
+  }, [fps, videoRef, onFrameChange]);
 
   const goToNextFrame = useCallback(() => {
-    if (video.fps && duration && videoRef.current) {
-      const actualFrame = Math.floor(videoRef.current.currentTime * video.fps + 0.001);
-      const totalFrames = Math.floor(duration * video.fps);
+    if (fps && duration && videoRef.current) {
+      const actualFrame = Math.floor(videoRef.current.currentTime * fps + 0.001);
+      const totalFrames = Math.floor(duration * fps);
       if (actualFrame < totalFrames - 1) {
-        const targetTime = (actualFrame + 1) / video.fps;
+        const targetTime = (actualFrame + 1) / fps;
         videoRef.current.currentTime = targetTime;
         setCurrentTime(targetTime);
         onFrameChange(actualFrame + 1);
       }
     }
-  }, [video.fps, duration, videoRef, onFrameChange]);
+  }, [fps, duration, videoRef, onFrameChange]);
 
   // Canvas drawing functions
   const getCanvasCoordinatesLocal = useCallback((e: React.MouseEvent) => {
@@ -329,11 +437,11 @@ export default function VideoPlayer({
     setPreviewTime(null);
     
     // Sync frame state after dragging ends
-    if (videoRef.current && video.fps) {
-      const targetFrame = Math.floor(finalTime * video.fps + 0.001);
+    if (videoRef.current && fps) {
+      const targetFrame = Math.floor(finalTime * fps + 0.001);
       onFrameChange(targetFrame);
     }
-  }, [isDraggingProgress, previewTime, currentTime, videoRef, video.fps, onFrameChange]);
+  }, [isDraggingProgress, previewTime, currentTime, videoRef, fps, onFrameChange]);
 
   // Add/remove mouse event listeners for dragging
   useEffect(() => {
@@ -476,7 +584,7 @@ export default function VideoPlayer({
       return;
     }
     
-    if (isDrawing && currentBBox && gpsData && video.fps) {
+    if (isDrawing && currentBBox && gpsData && fps) {
       const actualFrame = getActualFrame();
       
       // Check if the bounding box has minimum size (avoid point-like boxes)
@@ -494,7 +602,7 @@ export default function VideoPlayer({
           onBoundingBoxCreate(selectedAnnotation.id, boundingBoxData);
         } else {
           // Create a new annotation with bounding box
-          const gpsPoint = getGPSForFrame(gpsData.data as any[], actualFrame, video.fps);
+          const gpsPoint = getGPSForFrame(gpsData.data as any[], actualFrame, fps);
           if (!gpsPoint) {
             console.warn("No GPS data available for current frame");
             setIsDrawing(false);
@@ -546,8 +654,11 @@ export default function VideoPlayer({
     setInitialBoundingBox(null);
   }, [isDrawing, currentBBox, gpsData, video, currentTime, onAnnotationCreate, onBoundingBoxCreate, folderId, isMoving, isResizing, selectedBoundingBox, onBoundingBoxUpdate, getCanvasCoordinatesLocal, onAnnotationSelect, selectedAnnotationId, annotations, boundingBoxes, initialBoundingBox, getActualFrame]);
 
-  // Draw annotations on canvas
+  // Draw annotations on canvas (only when paused or for interactions)
   useEffect(() => {
+    // Skip if playing - rVFC handles drawing during playback
+    if (isPlaying) return;
+    
     const canvas = canvasRef.current;
     if (!canvas) return;
     
@@ -601,7 +712,7 @@ export default function VideoPlayer({
         drawBoundingBoxHandles(ctx, selectedBbox);
       }
     }
-  }, [annotations, currentFrameBoundingBoxes, selectedAnnotationId, currentBBox, isMoving, isResizing, selectedBoundingBox]);
+  }, [annotations, currentFrameBoundingBoxes, selectedAnnotationId, currentBBox, isMoving, isResizing, selectedBoundingBox, isPlaying]);
 
   // Clean up cursor on unmount
   useEffect(() => {
@@ -613,7 +724,7 @@ export default function VideoPlayer({
   }, []);
 
 
-  const totalFrames = video.fps && duration ? Math.floor(duration * video.fps) : 0;
+  const totalFrames = fps && duration ? Math.floor(duration * fps) : 0;
 
   return (
     <div className="h-full flex flex-col">
@@ -669,13 +780,13 @@ export default function VideoPlayer({
               {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
             </Button>
             <Button
-              onClick={toggleMute}
+              onClick={cyclePlaybackRate}
               size="sm"
-              className="p-2"
+              className="px-3"
               variant="outline"
-              data-testid="button-mute"
+              data-testid="button-playback-rate"
             >
-              {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+              {playbackRate}x
             </Button>
             <span className="text-sm text-muted-foreground" data-testid="text-current-time">
               {formatTime(isDraggingProgress && previewTime !== null ? previewTime : currentTime)}
@@ -717,7 +828,7 @@ export default function VideoPlayer({
             <div className="flex items-center space-x-2">
               <span className="text-muted-foreground">Frame:</span>
               <span className="text-foreground font-mono" data-testid="text-current-frame">
-                {video.fps ? Math.floor(currentTime * video.fps + 0.001) : 0}
+                {fps ? Math.floor(currentTime * fps + 0.001) : 0}
               </span>
               <span className="text-muted-foreground">/</span>
               <span className="text-muted-foreground font-mono" data-testid="text-total-frames">
@@ -729,7 +840,7 @@ export default function VideoPlayer({
                 onClick={goToPreviousFrame} 
                 size="sm" 
                 variant="secondary"
-                disabled={video.fps ? getActualFrame() <= 0 : true}
+                disabled={fps ? getActualFrame() <= 0 : true}
                 data-testid="button-previous-frame"
               >
                 <SkipBack className="w-4 h-4 mr-1" />
@@ -739,7 +850,7 @@ export default function VideoPlayer({
                 onClick={goToNextFrame} 
                 size="sm" 
                 variant="secondary"
-                disabled={video.fps && duration ? getActualFrame() >= totalFrames - 1 : true}
+                disabled={fps && duration ? getActualFrame() >= totalFrames - 1 : true}
                 data-testid="button-next-frame"
               >
                 Frame
@@ -751,4 +862,8 @@ export default function VideoPlayer({
       </div>
     </div>
   );
-}
+});
+
+VideoPlayer.displayName = "VideoPlayer";
+
+export default VideoPlayer;

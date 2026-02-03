@@ -1,14 +1,15 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import { Edit, Trash2 } from "lucide-react";
-import type { Annotation } from "@shared/schema";
+import type { Annotation, BoundingBox } from "@shared/schema";
 import { getAnnotationCSSColor, getAnnotationIndex, getAnnotationHexColor, getAnnotationColor } from "./helpers/video-player-helpers";
 import EditAnnotationModal from "./edit-annotation-modal";
 import { getSignTypeById } from "@/data/sign-types";
 
 interface AnnotationListProps {
   annotations: Annotation[];
+  boundingBoxes: BoundingBox[];
   selectedAnnotationId?: string | null;
   onAnnotationSelect: (id: string | null) => void;
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void;
@@ -17,6 +18,7 @@ interface AnnotationListProps {
 
 export default function AnnotationList({
   annotations,
+  boundingBoxes,
   selectedAnnotationId,
   onAnnotationSelect,
   onAnnotationUpdate,
@@ -56,6 +58,31 @@ export default function AnnotationList({
     return `${abs.toFixed(4)}°${direction}`;
   };
 
+  const sortedAnnotations = useMemo(() => {
+      // 1. Pré-calcul : Créer un dictionnaire { annotationId: tempsDeDebut }
+      // On parcourt les boxes UNE SEULE FOIS.
+      const startTimes = new Map<string, number>();
+
+      for (const bbox of boundingBoxes) {
+        const currentMin = startTimes.get(bbox.annotationId) ?? Number.POSITIVE_INFINITY;
+        if (bbox.frameTimestampMs < currentMin) {
+          startTimes.set(bbox.annotationId, bbox.frameTimestampMs);
+        }
+      }
+
+      // 2. Tri : On utilise le dictionnaire pour une lecture instantanée
+      return [...annotations].sort((a, b) => {
+        const aTime = startTimes.get(a.id) ?? Number.POSITIVE_INFINITY;
+        const bTime = startTimes.get(b.id) ?? Number.POSITIVE_INFINITY;
+
+        // Si même temps, tri alphabétique
+        if (aTime === bTime) return a.label.localeCompare(b.label);
+        
+        // Sinon tri chronologique
+        return aTime - bTime;
+      });
+    }, [annotations, boundingBoxes]);
+
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between mb-4 flex-shrink-0">
@@ -78,7 +105,7 @@ export default function AnnotationList({
             <p className="text-xs mt-1">Draw bounding boxes on the video to create annotations</p>
           </div>
         ) : (
-          annotations.map((annotation) => {
+          sortedAnnotations.map((annotation) => {
             const annotationColor = getAnnotationColor(annotations, annotation.id);
             const signType = annotation.signType ? getSignTypeById(annotation.signType) : null;
             return (
@@ -141,7 +168,7 @@ export default function AnnotationList({
                     </DialogTrigger>
                     {editingAnnotation?.id === annotation.id && (
                       <EditAnnotationModal
-                        annotation={editingAnnotation}
+                        annotation={annotation}
                         onSave={(updates) => onAnnotationUpdate(annotation.id, updates)}
                         onClose={() => setEditingAnnotation(null)}
                       />

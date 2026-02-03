@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { Link } from "wouter";
-import VideoPlayer from "@/components/video-player";
+import VideoPlayer, { type VideoPlayerHandle } from "@/components/video-player";
 import MapPanel from "@/components/map-panel";
 import AnnotationList from "@/components/annotation-list";
 import BoundingBoxList from "@/components/bounding-box-list";
@@ -23,6 +23,7 @@ export default function AnnotationTool() {
   const [currentFrame, setCurrentFrame] = useState(0);
   const [viewMode, setViewMode] = useState<"video" | "map">("video");
   const { toast } = useToast();
+  const videoPlayerRef = useRef<VideoPlayerHandle | null>(null);
 
   // Fetch folder data to get project ID for back navigation
   const { data: folder } = useQuery({
@@ -76,6 +77,11 @@ export default function AnnotationTool() {
   }, [annotations, selectedAnnotationId]);
 
   // Function to handle selection from annotation list (with zoom and video navigation)
+  const navigateToFrame = useCallback((frame: number) => {
+    setCurrentFrame(frame);
+    videoPlayerRef.current?.seekToFrame(frame);
+  }, []);
+
   const handleAnnotationListSelection = useCallback((id: string | null) => {
     setShouldZoomToSelection(true);
     setSelectedAnnotationId(id);
@@ -89,10 +95,10 @@ export default function AnnotationTool() {
         const firstBoundingBox = sortedBoundingBoxes[0];
         
         // Navigate to the frame of the first bounding box
-        setCurrentFrame(firstBoundingBox.frameIndex);
+        navigateToFrame(firstBoundingBox.frameIndex);
       }
     }
-  }, [annotationsWithBboxes]);
+  }, [annotationsWithBboxes, navigateToFrame]);
 
   // Function to handle selection from video player (without frame navigation)
   const handleVideoPlayerSelection = useCallback((id: string | null) => {
@@ -115,10 +121,10 @@ export default function AnnotationTool() {
         const firstBoundingBox = sortedBoundingBoxes[0];
         
         // Navigate to the frame of the first bounding box
-        setCurrentFrame(firstBoundingBox.frameIndex);
+        navigateToFrame(firstBoundingBox.frameIndex);
       }
     }
-  }, [annotationsWithBboxes]);
+  }, [annotationsWithBboxes, navigateToFrame]);
 
   const handleVideoUpload = useCallback((videoId: string) => {
     toast({
@@ -256,8 +262,8 @@ export default function AnnotationTool() {
   }, [folderId, toast, queryClient]);
 
   const handleFrameNavigate = useCallback((frame: number) => {
-    setCurrentFrame(frame);
-  }, []);
+    navigateToFrame(frame);
+  }, [navigateToFrame]);
 
   const handleAnnotationUpdate = useCallback(async (id: string, updates: Partial<Annotation>) => {
     try {
@@ -555,6 +561,7 @@ export default function AnnotationTool() {
                       onAnnotationSelect={handleVideoPlayerSelection}
                       onVideoDelete={handleVideoDelete}
                       folderId={folderId}
+                      ref={videoPlayerRef}
                     />
                   ) : (
                     <FileUpload onVideoUpload={handleVideoUpload} folderId={folderId} />
@@ -594,6 +601,7 @@ export default function AnnotationTool() {
                   <div className="p-4 flex-1 min-h-0">
                     <AnnotationList
                       annotations={annotations}
+                      boundingBoxes={boundingBoxes}
                       selectedAnnotationId={selectedAnnotationId}
                       onAnnotationSelect={handleAnnotationListSelection}
                       onAnnotationUpdate={handleAnnotationUpdate}
@@ -608,6 +616,7 @@ export default function AnnotationTool() {
           <div className="flex-1 h-0">
             <MapOnlyView
               annotations={annotations}
+              boundingBoxes={boundingBoxes}
               selectedAnnotationId={selectedAnnotationId}
               onAnnotationSelect={setSelectedAnnotationId}
               onAnnotationUpdate={handleAnnotationUpdate}

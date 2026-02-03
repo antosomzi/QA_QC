@@ -6,6 +6,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
+import { getVideoMetadata } from "./video-utils";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -56,7 +57,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         gpsData: allGpsData
       });
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch debug data", error: error.message });
+      res.status(500).json({ message: "Failed to fetch debug data", error: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -199,13 +200,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Folder already contains a video. Each folder can only contain one video." });
       }
 
+      // Extract video metadata using ffprobe for accurate FPS
+      const videoFilePath = path.join('uploads', req.file.filename);
+      let extractedMetadata = { fps: 30, duration: 0, width: 0, height: 0 };
+      try {
+        extractedMetadata = await getVideoMetadata(videoFilePath);
+        console.log(`[upload] Extracted metadata from video: fps=${extractedMetadata.fps}, duration=${extractedMetadata.duration}`);
+      } catch (probeError) {
+        console.warn(`[upload] Failed to probe video metadata, using defaults:`, probeError);
+        // Fall back to frontend-provided values if ffprobe fails
+        extractedMetadata = {
+          fps: req.body.fps ? parseFloat(req.body.fps) : 30,
+          duration: req.body.duration ? parseFloat(req.body.duration) : 0,
+          width: req.body.width ? parseInt(req.body.width) : 0,
+          height: req.body.height ? parseInt(req.body.height) : 0,
+        };
+      }
+
       const videoData = {
         filename: req.file.filename,
         originalName: req.file.originalname,
-        duration: req.body.duration ? parseFloat(req.body.duration) : undefined,
-        fps: req.body.fps ? parseFloat(req.body.fps) : undefined,
-        width: req.body.width ? parseInt(req.body.width) : undefined,
-        height: req.body.height ? parseInt(req.body.height) : undefined,
+        duration: extractedMetadata.duration,
+        fps: extractedMetadata.fps,
+        width: extractedMetadata.width,
+        height: extractedMetadata.height,
         folderId: req.params.folderId,
       };
 
