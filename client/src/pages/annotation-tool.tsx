@@ -12,7 +12,7 @@ import MapOnlyView from "@/components/map-only-view";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { ArrowLeft, Map, Video } from "lucide-react";
+import { ArrowLeft, Map, Video, X } from "lucide-react";
 import type { Video as VideoType, GpsData, Annotation, AnnotationWithBoundingBoxes, BoundingBox } from "@shared/schema";
 
 export default function AnnotationTool() {
@@ -20,6 +20,7 @@ export default function AnnotationTool() {
   const folderId = params.folderId as string;
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [shouldZoomToSelection, setShouldZoomToSelection] = useState<boolean>(true);
+  const [showGpsBanner, setShowGpsBanner] = useState<boolean>(true);
   const [currentFrame, setCurrentFrame] = useState(0);
   const [viewMode, setViewMode] = useState<"video" | "map">("video");
   const { toast } = useToast();
@@ -358,20 +359,24 @@ export default function AnnotationTool() {
     }
   }, [refetchAnnotations, toast]);
 
-  const handleExportAnnotations = useCallback(async () => {
+  const handleExportCSV = useCallback(async () => {
     try {
-      const response = await fetch(`/api/annotations/export/folder/${folderId}`);
-      const data = await response.json();
+      const response = await fetch(`/api/annotations/export-csv/folder/${folderId}`);
+      if (!response.ok) {
+        throw new Error('Failed to export CSV');
+      }
       
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const csvContent = await response.text();
+      const blob = new Blob([csvContent], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      // Utiliser le nom du dossier pour le fichier d'export
+      
+      // Get folder name for filename
       const folderResponse = await fetch(`/api/folders/${folderId}`);
       const folder = await folderResponse.json();
       const filename = folder.name.replace(/\s+/g, '_');
-      a.download = `annotations_${filename}.json`;
+      a.download = `signs_${filename}.csv`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -379,12 +384,12 @@ export default function AnnotationTool() {
 
       toast({
         title: "Export successful",
-        description: "Annotations have been exported to JSON file.",
+        description: "Signs have been exported to CSV file.",
       });
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to export annotations.",
+        description: "Failed to export signs as CSV.",
         variant: "destructive",
       });
     }
@@ -507,11 +512,11 @@ export default function AnnotationTool() {
               </Button>
             </label>
             <Button
-              onClick={handleExportAnnotations}
+              onClick={handleExportCSV}
               size="sm"
-              data-testid="button-export-json"
+              data-testid="button-export-csv"
             >
-              Export JSON
+              Export CSV
             </Button>
             <Button
               onClick={handleDeleteAllAnnotations}
@@ -530,12 +535,13 @@ export default function AnnotationTool() {
         {viewMode === "video" ? (
           <div className="flex h-[calc(100vh-80px)] flex-col">
             {/* GPS Upload Banner - show if video exists but no GPS data */}
-            {selectedVideo && !gpsData && (
+            {selectedVideo && !gpsData && showGpsBanner && (
               <div className="px-6 py-3 bg-card border-b border-border">
                 <GpsUpload 
                   videoId={selectedVideo.id} 
                   onUploadComplete={() => refetchGpsData()}
                   compact={true}
+                  onClose={() => setShowGpsBanner(false)}
                 />
               </div>
             )}
@@ -597,7 +603,7 @@ export default function AnnotationTool() {
               </div>
               
                 {/* AnnotationList - larger than BoundingBoxList */}
-                <div className={`border-t border-border bg-background flex flex-col flex-shrink-0 h-[35vh]`}>
+                <div className={`border-t border-border bg-background flex flex-col flex-shrink-0 h-[50vh]`}>
                   <div className="p-4 flex-1 min-h-0">
                     <AnnotationList
                       annotations={annotations}

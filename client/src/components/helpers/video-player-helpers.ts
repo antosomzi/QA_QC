@@ -197,8 +197,17 @@ export function getAnnotationCSSColor(index: number): string {
  * Get hex color for annotation based on index (for canvas drawing and maps)
  */
 export function getAnnotationHexColor(index: number): string {
-  const colors = ['#3B82F6', '#8B5CF6', '#EAB308', '#10B981', '#A855F7'];
-  //               primary    accent    yellow-500 green-500 purple-500
+  // Couleurs "néon" très voyantes pour maximiser la visibilité sur la vidéo
+  const colors = [
+    '#FF0000', // Rouge vif
+    '#00FF00', // Vert fluo
+    '#FFFF00', // Jaune vif
+    '#FF00FF', // Magenta
+    '#00FFFF', // Cyan
+    '#FFA500', // Orange vif
+    '#FF1493', // Rose profond
+    '#7FFF00'  // Chartreuse
+  ];
   return colors[index % colors.length];
 }
 
@@ -397,8 +406,15 @@ export function drawBoundingBox(
   const drawW = bottomRight.x - topLeft.x;
   const drawH = bottomRight.y - topLeft.y;
   const annotationColor = getAnnotationColor(annotations, annotation.id);
-  const strokeColor = isSelected ? '#FF6B6B' : annotationColor;
-  const lineWidth = isSelected ? 6 : 4;
+  // Utiliser une couleur vive pour la sélection (cyan brillant) et plus épaisse
+  const strokeColor = isSelected ? '#00FFFF' : annotationColor;
+  // Augmenter l'épaisseur des traits pour une meilleure visibilité
+  const lineWidth = isSelected ? 5 : 3;
+
+  // Dessiner une ombre portée pour le contraste
+  ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
+  ctx.shadowBlur = 4;
+  ctx.shadowOffsetX = 1;
 
   ctx.strokeStyle = strokeColor;
   ctx.lineWidth = lineWidth;
@@ -409,14 +425,28 @@ export function drawBoundingBox(
   
   ctx.strokeRect(drawX, drawY, drawW, drawH);
   
+  // Réinit les ombres pour éviter d'affecter le texte ou les autres éléments
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+
   if (options.isDashed) {
     ctx.setLineDash([]);
   }
 
-  // Draw label
-  ctx.fillStyle = strokeColor;
-  ctx.font = isSelected ? 'bold 14px Inter' : '14px Inter';
-  ctx.fillText(annotation.label, drawX, drawY - 5);
+  // Draw background for label to make it readable
+  ctx.font = isSelected ? 'bold 16px Inter' : 'bold 14px Inter';
+  const text = annotation.label;
+  const metrics = ctx.measureText(text);
+  const textHeight = parseInt(ctx.font, 10); // Approximation
+  
+  // Fond noir plus opaque pour meilleure lisibilité
+  ctx.fillStyle = isSelected ? 'rgba(0, 0, 0, 0.8)' : 'rgba(0, 0, 0, 0.6)';
+  ctx.fillRect(drawX, drawY - textHeight - 8, metrics.width + 10, textHeight + 8);
+
+  // Draw label text in bright white also with stroke
+  ctx.fillStyle = '#FFFFFF'; 
+  ctx.fillText(text, drawX + 5, drawY - 6);
 }
 
 /**
@@ -426,9 +456,12 @@ export function drawBoundingBoxHandles(
   ctx: CanvasRenderingContext2D,
   bbox: BoundingBox,
   handleSize: number = 8,
-  color: string = '#FF6B6B'
+  color: string = '#00FFFF'
 ): void {
   ctx.fillStyle = color;
+  ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
+  ctx.shadowBlur = 4;
+
 
   const canvas = ctx.canvas;
   const topLeft = mapVideoPointToCanvasPoint(canvas, { x: bbox.bboxX, y: bbox.bboxY });

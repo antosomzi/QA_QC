@@ -502,23 +502,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Export/Import routes
-  app.get("/api/annotations/export/folder/:folderId", async (req, res) => {
+  // Export annotations as CSV (signs.csv format with modifications)
+  app.get("/api/annotations/export-csv/folder/:folderId", async (req, res) => {
     try {
-      const exportData = await storage.exportAnnotationsByFolder(req.params.folderId);
-      if (!exportData) {
+      const annotationsWithBboxes = await storage.getAnnotationsWithBoundingBoxesByFolderId(req.params.folderId);
+      
+      // Get folder for filename
+      const folder = await storage.getFolder(req.params.folderId);
+      if (!folder) {
         return res.status(404).json({ message: "Folder not found" });
       }
+      const filename = folder.name.replace(/\s+/g, '_');
       
-      // Utiliser le nom du dossier pour le nom du fichier
-      const folder = await storage.getFolder(req.params.folderId);
-      const filename = folder ? folder.name.replace(/\s+/g, '_') : req.params.folderId;
+      // CSV header matching signs.csv format + Longitude, Latitude columns
+      const csvHeader = "ID,Foreign Key,MUTCD Code,Position on the Support,Height (in),Width (in),Text,Longitude,Latitude";
       
-      res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Content-Disposition', `attachment; filename="annotations_${filename}.json"`);
-      res.json(exportData);
+      // Generate CSV rows from annotations
+      // Each annotation becomes one row (signType = MUTCD Code, gpsLon/gpsLat for position)
+      const csvRows = annotationsWithBboxes.map((annotation, index) => {
+        // ID: sequential index
+        const id = index;
+        // Foreign Key: use annotation ID (first 8 chars of UUID for readability)
+        const foreignKey = annotation.id.substring(0, 8);
+        // MUTCD Code: use signType if available, otherwise label
+        const mutcdCode = annotation.signType || annotation.label || '';
+        // Position on the Support: default to 1
+        const positionOnSupport = 1;
+        // Height and Width: get from first bounding box if available (in pixels, not inches)
+        const firstBbox = annotation.boundingBoxes.length > 0 ? annotation.boundingBoxes[0] : null;
+        const height = firstBbox ? firstBbox.bboxHeight : 0;
+        const width = firstBbox ? firstBbox.bboxWidth : 0;
+        // Text: empty for now
+        const text = '';
+        // Longitude and Latitude from annotation GPS
+        const longitude = annotation.gpsLon;
+        const latitude = annotation.gpsLat;
+        
+        return `${id},${foreignKey},${mutcdCode},${positionOnSupport},${height},${width},${text},${longitude},${latitude}`;
+      });
+      
+      const csvContent = [csvHeader, ...csvRows].join('\n');
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="signs_${filename}.csv"`);
+      res.send(csvContent);
     } catch (error) {
-      res.status(500).json({ message: "Failed to export annotations" });
+      res.status(500).json({ message: "Failed to export annotations as CSV" });
     }
   });
 

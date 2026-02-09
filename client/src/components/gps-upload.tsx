@@ -2,16 +2,17 @@ import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { MapPin, Upload } from "lucide-react";
+import { MapPin, Upload, X } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface GpsUploadProps {
   videoId: string;
   onUploadComplete?: () => void;
   compact?: boolean;
+  onClose?: () => void;
 }
 
-export default function GpsUpload({ videoId, onUploadComplete, compact = false }: GpsUploadProps) {
+export default function GpsUpload({ videoId, onUploadComplete, compact = false, onClose }: GpsUploadProps) {
   const [isUploading, setIsUploading] = useState(false);
   const { toast } = useToast();
 
@@ -110,7 +111,20 @@ export default function GpsUpload({ videoId, onUploadComplete, compact = false }
             Click here or drag & drop a CSV or JSON file • You can view existing annotations without GPS
           </p>
         </div>
-        <Upload className="w-4 h-4 text-yellow-600 flex-shrink-0" />
+        {!isUploading && onClose && (
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="h-6 w-6 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-500/20"
+            onClick={(e) => {
+              e.stopPropagation(); // Empêcher le clic de déclencher l'upload
+              onClose();
+            }}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )}
+        {!onClose && <Upload className="w-4 h-4 text-yellow-600 flex-shrink-0" />}
       </div>
     );
   }
