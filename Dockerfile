@@ -26,10 +26,14 @@ RUN apk add --no-cache ffmpeg
 # Copy package files
 COPY package*.json ./
 
-# Install only production dependencies
+# Install all dependencies (need drizzle-orm for migrations)
 RUN npm ci && npm cache clean --force
-# Copy built files from builder
+
+# Copy built files and migration scripts from builder
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/shared ./shared
 
 # Expose the port
 EXPOSE 5001
@@ -38,5 +42,5 @@ EXPOSE 5001
 ENV NODE_ENV=production
 ENV PORT=5001
 
-# Start the application
-CMD ["npm", "start"]
+# Run migrations and start the application
+CMD ["sh", "-c", "npm run db:migrate && npm start"]
