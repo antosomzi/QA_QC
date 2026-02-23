@@ -94,7 +94,7 @@ export default function MapPanel({
         
         marker.bindPopup(`
           <div>
-            <strong>${annotation.label}</strong><br>
+            <strong>${annotation.signType}</strong><br>
             GPS: ${annotation.gpsLat.toFixed(6)}, ${annotation.gpsLon.toFixed(6)}
           </div>
         `);

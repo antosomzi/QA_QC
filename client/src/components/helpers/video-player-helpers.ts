@@ -465,7 +465,7 @@ export function drawBoundingBox(
 
   // Draw background for label to make it readable
   ctx.font = isSelected ? 'bold 16px Inter' : 'bold 14px Inter';
-  const text = annotation.label;
+  const text = annotation.signType;
   const metrics = ctx.measureText(text);
   const textHeight = parseInt(ctx.font, 10); // Approximation
   

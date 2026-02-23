@@ -86,7 +86,7 @@ export default function MapOnlyView({
             </div>
             {selectedAnnotationId && (
               <div className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded">
-                {annotations.find(a => a.id === selectedAnnotationId)?.label || "Selected"}
+                {annotations.find(a => a.id === selectedAnnotationId)?.signType || "Selected"}
               </div>
             )}
           </div>

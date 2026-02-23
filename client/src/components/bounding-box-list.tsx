@@ -51,7 +51,7 @@ export default function BoundingBoxList({
   if (annotationBoundingBoxes.length === 0) {
     return (
       <div className="p-4 text-center text-muted-foreground">
-        <p className="text-sm">No bounding boxes for "{annotation.label}"</p>
+        <p className="text-sm">No bounding boxes for "{annotation.signType}"</p>
         <p className="text-xs mt-1">Draw a bounding box on the video to add one</p>
       </div>
     );
@@ -61,7 +61,7 @@ export default function BoundingBoxList({
     <div className="p-4 h-full flex flex-col">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-medium text-foreground">
-          Bounding Boxes for "{annotation.label}"
+          Bounding Boxes for "{annotation.signType}"
         </h3>
         <div className="flex items-center space-x-2">
           <Badge variant="secondary" className="text-xs">

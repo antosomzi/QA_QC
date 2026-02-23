@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import { Edit, Trash2, AlertTriangle } from "lucide-react";
 import type { Annotation, BoundingBox } from "@shared/schema";
 import { getAnnotationCSSColor, getAnnotationIndex, getAnnotationHexColor, getAnnotationColor, getLowConfidenceIssue } from "./helpers/video-player-helpers";
@@ -75,9 +74,11 @@ export default function AnnotationList({
         const aTime = startTimes.get(a.id) ?? Number.POSITIVE_INFINITY;
         const bTime = startTimes.get(b.id) ?? Number.POSITIVE_INFINITY;
 
-        // Si même temps, tri alphabétique
-        if (aTime === bTime) return a.label.localeCompare(b.label);
-        
+        // Si même temps, tri alphabétique par signType
+        if (aTime === bTime) {
+          return a.signType.localeCompare(b.signType);
+        }
+
         // Sinon tri chronologique
         return aTime - bTime;
       });
@@ -186,7 +187,7 @@ export default function AnnotationList({
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium" data-testid={`text-annotation-label-${annotation.id}`}>
-                        {annotation.label}
+                        {annotation.signType}
                       </p>
                       {lowConfidence.isLowConfidence && (
                         <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
@@ -198,29 +199,19 @@ export default function AnnotationList({
                   </div>
                 </div>
                 <div className="flex items-center space-x-1">
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="p-1 text-muted-foreground hover:text-foreground"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingAnnotation(annotation);
-                        }}
-                        data-testid={`button-edit-annotation-${annotation.id}`}
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                    </DialogTrigger>
-                    {editingAnnotation?.id === annotation.id && (
-                      <EditAnnotationModal
-                        annotation={annotation}
-                        onSave={(updates) => onAnnotationUpdate(annotation.id, updates)}
-                        onClose={() => setEditingAnnotation(null)}
-                      />
-                    )}
-                  </Dialog>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="p-1 text-muted-foreground hover:text-foreground"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setEditingAnnotation(annotation);
+                    }}
+                    data-testid={`button-edit-annotation-${annotation.id}`}
+                  >
+                    <Edit className="w-4 h-4" />
+                  </Button>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -243,6 +234,18 @@ export default function AnnotationList({
           })
         )}
       </div>
+
+      {/* Edit modal rendered outside the list to avoid event bubbling issues */}
+      {editingAnnotation && (
+        <EditAnnotationModal
+          annotation={editingAnnotation}
+          onSave={(updates) => {
+            onAnnotationUpdate(editingAnnotation.id, updates);
+            setEditingAnnotation(null);
+          }}
+          onClose={() => setEditingAnnotation(null)}
+        />
+      )}
     </div>
   );
 }

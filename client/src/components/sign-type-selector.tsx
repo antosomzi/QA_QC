@@ -13,10 +13,10 @@ interface SignTypeSelectorProps {
   placeholder?: string;
 }
 
-export default function SignTypeSelector({ 
-  value, 
-  onValueChange, 
-  placeholder = "Search and select a sign type..." 
+export default function SignTypeSelector({
+  value,
+  onValueChange,
+  placeholder = "Search and select a sign type..."
 }: SignTypeSelectorProps) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -28,7 +28,7 @@ export default function SignTypeSelector({
     
     const query = searchQuery.toLowerCase();
     return SIGN_TYPES.filter(sign => 
-      sign.id.toLowerCase().includes(query) ||
+      sign.id.toLowerCase().includes(query) || 
       sign.name.toLowerCase().includes(query)
     );
   }, [searchQuery]);
@@ -38,16 +38,18 @@ export default function SignTypeSelector({
   const hasMoreResults = filteredSigns.length > displayedSigns.length;
 
   // Get selected sign
-  const selectedSign = value ? SIGN_TYPES.find(sign => sign.id === value) : undefined;
+  const selectedSign = value 
+    ? SIGN_TYPES.find(sign => sign.id === value) 
+    : undefined;
 
   // Update input display based on selection
   useEffect(() => {
-    if (selectedSign && !open) {
+    if (selectedSign) {
       setSearchQuery(selectedSign.name);
-    } else if (!selectedSign && !open) {
+    } else {
       setSearchQuery("");
     }
-  }, [selectedSign, open]);
+  }, [selectedSign]);
 
   const handleSelect = (signId: string) => {
     const sign = SIGN_TYPES.find(s => s.id === signId);
@@ -56,10 +58,10 @@ export default function SignTypeSelector({
     setOpen(false);
   };
 
-  const handleClear = () => {
+  const handleClear = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Empêche la propagation du clic
     onValueChange(undefined);
     setSearchQuery("");
-    inputRef.current?.focus();
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -77,107 +79,98 @@ export default function SignTypeSelector({
     }
   };
 
-  const handleInputFocus = () => {
+  const handleInputClick = () => {
     setOpen(true);
-    // Clear input when focusing to allow search
-    if (selectedSign) {
-      setSearchQuery("");
-    }
-  };
-
-  const handleInputBlur = () => {
-    // Small delay to allow selection to happen
-    setTimeout(() => {
-      setOpen(false);
-      // Restore display value if we have a selection
-      if (selectedSign) {
-        setSearchQuery(selectedSign.name);
-      }
-    }, 200);
   };
 
   return (
-    <div className="w-full">
-      <Label className="text-sm font-medium">Sign Type</Label>
-      <div className="relative">
-        <div className="flex items-center gap-2">
-          {selectedSign && (
-            <img
-              src={selectedSign.imagePath}
-              alt={selectedSign.name}
-              className="w-6 h-6 object-contain flex-shrink-0 absolute left-2 top-1/2 transform -translate-y-1/2 z-10"
-              loading="lazy"
+    <div className="space-y-2">
+      <Label>Sign Type</Label>
+      
+      <Popover open={open} onOpenChange={setOpen} modal={true}>
+        <PopoverTrigger asChild>
+          <div className="relative">
+            <Input
+              ref={inputRef}
+              type="text"
+              placeholder={placeholder}
+              value={searchQuery}
+              onChange={handleInputChange}
+              onClick={handleInputClick}
+              className={cn(
+                "pr-20",
+                selectedSign && "pr-20"
+              )}
             />
-          )}
-          <Input
-            ref={inputRef}
-            value={searchQuery}
-            onChange={handleInputChange}
-            onFocus={handleInputFocus}
-            onBlur={handleInputBlur}
-            placeholder={placeholder}
-            className={cn(
-              "w-full",
-              selectedSign ? "pl-10" : "pl-3"
+            {selectedSign && (
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                <Check className="h-4 w-4 text-green-600" />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 hover:bg-destructive/10"
+                  onClick={handleClear}
+                  onMouseDown={(e) => e.preventDefault()} // Empêche le blur de l'input
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
             )}
-          />
-          {selectedSign && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0 hover:bg-transparent"
-              onClick={handleClear}
-            >
-              <X className="h-4 w-4 opacity-50 hover:opacity-100" />
-            </Button>
-          )}
-        </div>
+          </div>
+        </PopoverTrigger>
         
-        {open && (displayedSigns.length > 0 || searchQuery) && (
-          <div className="absolute top-full left-0 right-0 z-[10001] mt-1 bg-popover border rounded-md shadow-md max-h-[200px] overflow-y-auto">
+        <PopoverContent
+          className="w-[var(--radix-popover-trigger-width)] p-0 z-[100001]"
+          align="start"
+          onOpenAutoFocus={(e) => {
+            e.preventDefault(); // Empêche le focus automatique
+            inputRef.current?.focus();
+          }}
+        >
+          <div className="max-h-[300px] overflow-y-auto">
             {displayedSigns.map((sign) => (
               <div
                 key={sign.id}
-                className="flex items-center gap-2 p-2 cursor-pointer hover:bg-accent"
-                onMouseDown={() => handleSelect(sign.id)} // Use onMouseDown to prevent blur
+                className={cn(
+                  "flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-accent transition-colors",
+                  value === sign.id && "bg-accent"
+                )}
+                onMouseDown={(e) => {
+                  e.preventDefault(); // Empêche le blur de l'input
+                  handleSelect(sign.id);
+                }}
               >
-                <img
-                  src={sign.imagePath}
-                  alt={sign.name}
-                  className="w-6 h-6 object-contain flex-shrink-0"
-                  loading="lazy"
-                />
-                <span className="flex-1 truncate">{sign.name}</span>
+                <span className="text-sm">{sign.name}</span>
                 {value === sign.id && (
-                  <Check className="h-4 w-4 opacity-100" />
+                  <Check className="h-4 w-4 text-green-600" />
                 )}
               </div>
             ))}
-            
+
             {/* Show more results indicator */}
             {hasMoreResults && (
-              <div className="p-2 text-xs text-muted-foreground text-center border-t bg-muted/30">
+              <div className="px-3 py-2 text-xs text-muted-foreground border-t">
                 ... and {filteredSigns.length - displayedSigns.length} more results. Keep typing to narrow down.
               </div>
             )}
-            
+
             {/* No results message */}
             {searchQuery && displayedSigns.length === 0 && (
-              <div className="p-2 text-sm text-muted-foreground text-center">
+              <div className="px-3 py-4 text-sm text-muted-foreground text-center">
                 No sign types found for "{searchQuery}"
               </div>
             )}
-            
+
             {/* Initial state hint */}
             {!searchQuery && displayedSigns.length > 0 && (
-              <div className="p-2 text-xs text-muted-foreground text-center border-t bg-muted/30">
+              <div className="px-3 py-2 text-xs text-muted-foreground border-t">
                 Showing {displayedSigns.length} of {SIGN_TYPES.length} total signs. Start typing to search...
               </div>
             )}
           </div>
-        )}
-      </div>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

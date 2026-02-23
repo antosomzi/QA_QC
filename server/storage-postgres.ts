@@ -254,7 +254,7 @@ export class PostgresStorage implements IStorage {
     }
 
     type ClusterAgg = {
-      label: string;
+      signType: string;
       // assume same 'class' for a given cluster_id
       gpsLat?: number;
       gpsLon?: number;
@@ -286,7 +286,7 @@ export class PostgresStorage implements IStorage {
 
         if (!clusters.has(key)) {
           clusters.set(key, {
-            label: sign.class || 'unknown',
+            signType: sign.class || 'unknown',
             bboxes: []
           });
         }
@@ -344,14 +344,12 @@ export class PostgresStorage implements IStorage {
         ? validDetectionConfidences.reduce((sum, c) => sum + c, 0) / validDetectionConfidences.length
         : undefined;
 
-      // signType is the label we recorded from the detector's 'class' field
-      const signType = cluster.label || undefined;
+      // signType from the detector's 'class' field
       const insertAnnotation: InsertAnnotation = {
         folderId: folderId,
         gpsLat: cluster.gpsLat,
         gpsLon: cluster.gpsLon,
-        label: cluster.label,
-        signType: signType as any,
+        signType: cluster.signType,
         classificationConfidence: avgClassificationConfidence,
         detectionConfidence: avgDetectionConfidence,
       };

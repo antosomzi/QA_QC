@@ -44,8 +44,7 @@ export const annotations = pgTable("annotations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   folderId: varchar("folder_id").references(() => folders.id, { onDelete: "cascade" }).notNull(), // Required folder reference
   videoId: varchar("video_id").references(() => videos.id, { onDelete: "cascade" }), // Optional video reference
-  label: text("label").notNull(),
-  signType: varchar("sign_type", { length: 50 }), // Sign type ID (optional)
+  signType: varchar("sign_type", { length: 50 }).notNull(), // Sign type ID (required)
   gpsLat: real("gps_lat").notNull(),
   gpsLon: real("gps_lon").notNull(),
   classificationConfidence: real("classification_confidence"),
@@ -149,8 +148,7 @@ export type AnnotationExport = {
   annotations: Array<{
     id: string;
     gps: { lat: number; lon: number };
-    label: string;
-    signType?: string;
+    signType: string;
     created_at: number;
     updated_at: number;
     classification_confidence?: number;

@@ -1177,7 +1177,9 @@ export const SIGN_TYPES: SignType[] = [
 
 // Helper function to get sign by ID
 export function getSignTypeById(id: string): SignType | undefined {
-  return SIGN_TYPES.find(sign => sign.id === id);
+  // Extraire la partie avant le underscore pour gérer les variantes (ex: "R2-1_45" → "R2-1")
+  const baseId = id.split('_')[0];
+  return SIGN_TYPES.find(sign => sign.id === baseId);
 }
 
 // Helper function to search signs by name

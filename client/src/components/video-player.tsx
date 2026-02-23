@@ -37,7 +37,7 @@ interface VideoPlayerProps {
   currentFrame: number;
   onFrameChange: (frame: number) => void;
   onAnnotationCreate: (
-    annotationData: Pick<Annotation, 'folderId' | 'videoId' | 'label' | 'gpsLat' | 'gpsLon'>,
+    annotationData: Pick<Annotation, 'folderId' | 'videoId' | 'signType' | 'gpsLat' | 'gpsLon'>,
     boundingBoxData: {
       frameIndex: number;
       frameTimestampMs: number;
@@ -615,7 +615,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
           const annotationData = {
             folderId: folderId,
             videoId: video.id,
-            label: "New Annotation",
+            signType: "Unknown",
             gpsLat: gpsPoint.lat,
             gpsLon: gpsPoint.lon,
           };

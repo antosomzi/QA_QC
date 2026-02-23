@@ -524,8 +524,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const id = index;
         // Foreign Key: use annotation ID (first 8 chars of UUID for readability)
         const foreignKey = annotation.id.substring(0, 8);
-        // MUTCD Code: use signType if available, otherwise label
-        const mutcdCode = annotation.signType || annotation.label || '';
+        // MUTCD Code: use signType
+        const mutcdCode = annotation.signType || '';
         // Position on the Support: default to 1
         const positionOnSupport = 1;
         // Height and Width: get from first bounding box if available (in pixels, not inches)
@@ -537,7 +537,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Longitude and Latitude from annotation GPS
         const longitude = annotation.gpsLon;
         const latitude = annotation.gpsLat;
-        
+
         return `${id},${foreignKey},${mutcdCode},${positionOnSupport},${height},${width},${text},${longitude},${latitude}`;
       });
       

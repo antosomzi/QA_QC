@@ -159,7 +159,7 @@ export default function AnnotationTool() {
   }, [selectedVideo, refetchVideos, toast]);
 
   const handleAnnotationCreate = useCallback(async (
-    annotationData: Pick<Annotation, 'folderId' | 'videoId' | 'label' | 'gpsLat' | 'gpsLon'>,
+    annotationData: Pick<Annotation, 'folderId' | 'videoId' | 'signType' | 'gpsLat' | 'gpsLon'>,
     boundingBoxData: {
       frameIndex: number;
       frameTimestampMs: number;
