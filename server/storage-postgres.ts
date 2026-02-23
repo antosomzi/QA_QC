@@ -220,53 +220,6 @@ export class PostgresStorage implements IStorage {
     return result.length > 0;
   }
 
-  async exportAnnotationsByFolder(folderId: string): Promise<AnnotationExport | undefined> {
-    const [folder] = await this.db.select().from(folders).where(eq(folders.id, folderId)).limit(1);
-    if (!folder) return undefined;
-
-    // Utiliser le nouveau endpoint qui récupère annotations + bounding boxes
-    const annotationsWithBboxes = await this.getAnnotationsWithBoundingBoxesByFolderId(folderId);
-    
-    // Check if any annotations are linked to a video
-    const videoAnnotations = annotationsWithBboxes.filter(ann => ann.videoId);
-    let videoInfo = undefined;
-    
-    if (videoAnnotations.length > 0) {
-      const videoId = videoAnnotations[0].videoId;
-      if (videoId) {
-        const [video] = await this.db.select().from(videos).where(eq(videos.id, videoId)).limit(1);
-        if (video) {
-          videoInfo = {
-            video_id: video.id,
-            original_name: video.originalName,
-            fps: 25, // Always export 25 FPS
-            duration_ms: (video.duration || 0) * 1000
-          };
-        }
-      }
-    }
-    
-    return {
-      video: videoInfo,
-      annotations: annotationsWithBboxes.map(ann => ({
-        id: ann.id,
-        gps: { lat: ann.gpsLat, lon: ann.gpsLon },
-        label: ann.label,
-        created_at: ann.createdAt?.getTime() || Date.now(),
-        updated_at: ann.updatedAt?.getTime() || Date.now(),
-        boundingBoxes: ann.boundingBoxes.map(bbox => ({
-          frame_index: bbox.frameIndex,
-          frame_timestamp_ms: bbox.frameTimestampMs,
-          x: bbox.bboxX,
-          y: bbox.bboxY,
-          width: bbox.bboxWidth,
-          height: bbox.bboxHeight,
-          unit: "pixel"
-        }))
-      }))
-    };
-  }
-
   async deleteAnnotationsByFolder(folderId: string): Promise<void> {
     // First get all annotation IDs in this folder
     const annotationIds = await this.db.select({ id: annotations.id })
@@ -312,6 +265,8 @@ export class PostgresStorage implements IStorage {
         y: number;
         width: number;
         height: number;
+        classificationConfidence?: number;
+        detectionConfidence?: number;
       }>;
     };
 
@@ -356,6 +311,8 @@ export class PostgresStorage implements IStorage {
           y: Math.round(y),
           width: Math.round(w),
           height: Math.round(h),
+          classificationConfidence: sign.classification_confidence,
+          detectionConfidence: sign.detection_confidence,
         });
       }
     }
@@ -372,6 +329,21 @@ export class PostgresStorage implements IStorage {
       // that are spatially inconsistent with the rest of the frames for the same object
       const filteredBboxes = cluster.bboxes.sort((a, b) => a.frameIndex - b.frameIndex).slice(2);
 
+      // Calculate average confidence values from all bounding boxes
+      const validClassificationConfidences = filteredBboxes
+        .map(b => b.classificationConfidence)
+        .filter((c): c is number => c !== undefined && c !== null);
+      const validDetectionConfidences = filteredBboxes
+        .map(b => b.detectionConfidence)
+        .filter((c): c is number => c !== undefined && c !== null);
+
+      const avgClassificationConfidence = validClassificationConfidences.length > 0
+        ? validClassificationConfidences.reduce((sum, c) => sum + c, 0) / validClassificationConfidences.length
+        : undefined;
+      const avgDetectionConfidence = validDetectionConfidences.length > 0
+        ? validDetectionConfidences.reduce((sum, c) => sum + c, 0) / validDetectionConfidences.length
+        : undefined;
+
       // signType is the label we recorded from the detector's 'class' field
       const signType = cluster.label || undefined;
       const insertAnnotation: InsertAnnotation = {
@@ -380,6 +352,8 @@ export class PostgresStorage implements IStorage {
         gpsLon: cluster.gpsLon,
         label: cluster.label,
         signType: signType as any,
+        classificationConfidence: avgClassificationConfidence,
+        detectionConfidence: avgDetectionConfidence,
       };
 
       const createdAnnotation = await this.createAnnotation(insertAnnotation);
@@ -393,6 +367,8 @@ export class PostgresStorage implements IStorage {
           bboxY: bbox.y,
           bboxWidth: bbox.width,
           bboxHeight: bbox.height,
+          classificationConfidence: bbox.classificationConfidence,
+          detectionConfidence: bbox.detectionConfidence,
         };
         try {
           await this.createBoundingBox(insertBoundingBox);

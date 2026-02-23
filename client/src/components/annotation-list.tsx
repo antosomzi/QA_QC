@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
-import { Edit, Trash2 } from "lucide-react";
+import { Edit, Trash2, AlertTriangle } from "lucide-react";
 import type { Annotation, BoundingBox } from "@shared/schema";
-import { getAnnotationCSSColor, getAnnotationIndex, getAnnotationHexColor, getAnnotationColor } from "./helpers/video-player-helpers";
+import { getAnnotationCSSColor, getAnnotationIndex, getAnnotationHexColor, getAnnotationColor, getLowConfidenceIssue } from "./helpers/video-player-helpers";
 import EditAnnotationModal from "./edit-annotation-modal";
 import { getSignTypeById } from "@/data/sign-types";
 
@@ -86,8 +86,47 @@ export default function AnnotationList({
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between mb-4 flex-shrink-0">
-        <h3 className="text-lg font-medium">Annotations</h3>
+        <h3 className="text-lg font-medium">Signs</h3>
         <div className="flex items-center space-x-2">
+          {/* Low confidence counts */}
+          {(() => {
+            const lowClassificationCount = annotations.filter(a => 
+              a.classificationConfidence !== undefined && 
+              a.classificationConfidence !== null && 
+              a.classificationConfidence < 0.3
+            ).length;
+            const lowDetectionCount = annotations.filter(a => 
+              a.detectionConfidence !== undefined && 
+              a.detectionConfidence !== null && 
+              a.detectionConfidence < 0.3
+            ).length;
+            
+            return (
+              <>
+                <span
+                  className={`text-xs px-2 py-1 rounded font-medium ${
+                    lowClassificationCount > 0 
+                      ? 'bg-red-100 text-red-700' 
+                      : 'bg-muted text-muted-foreground'
+                  }`}
+                  title="Low classification confidence"
+                >
+                  ⚠️ Classif: {lowClassificationCount}
+                </span>
+                <span
+                  className={`text-xs px-2 py-1 rounded font-medium ${
+                    lowDetectionCount > 0 
+                      ? 'bg-red-100 text-red-700' 
+                      : 'bg-muted text-muted-foreground'
+                  }`}
+                  title="Low detection confidence"
+                >
+                  ⚠️ Local: {lowDetectionCount}
+                </span>
+              </>
+            );
+          })()}
+          
           <span className="text-xs text-muted-foreground">Total:</span>
           <span
             className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded"
@@ -108,6 +147,7 @@ export default function AnnotationList({
           sortedAnnotations.map((annotation) => {
             const annotationColor = getAnnotationColor(annotations, annotation.id);
             const signType = annotation.signType ? getSignTypeById(annotation.signType) : null;
+            const lowConfidence = getLowConfidenceIssue(annotation);
             return (
             <div
               ref={annotation.id === selectedAnnotationId ? selectedAnnotationRef : null}
@@ -115,7 +155,9 @@ export default function AnnotationList({
               className={`p-3 rounded-md border cursor-pointer transition-colors ${
                 annotation.id === selectedAnnotationId
                   ? 'bg-primary/10 border-primary border-2 shadow-md'
-                  : 'bg-card border-border hover:bg-accent/50'
+                  : lowConfidence.isLowConfidence
+                    ? 'bg-card border-red-500 border-2 shadow-md'
+                    : 'bg-card border-border hover:bg-accent/50'
               }`}
               onClick={() => {
                 // Si l'annotation est déjà sélectionnée, la désélectionner
@@ -142,9 +184,14 @@ export default function AnnotationList({
                     style={{ backgroundColor: annotationColor }}
                   ></div>
                   <div>
-                    <p className="text-sm font-medium" data-testid={`text-annotation-label-${annotation.id}`}>
-                      {annotation.label}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium" data-testid={`text-annotation-label-${annotation.id}`}>
+                        {annotation.label}
+                      </p>
+                      {lowConfidence.isLowConfidence && (
+                        <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       GPS: {annotation.gpsLat.toFixed(5)}, {annotation.gpsLon.toFixed(5)}
                     </p>

@@ -48,9 +48,8 @@ export interface IStorage {
   getAnnotationsWithBoundingBoxesByFolderId(folderId: string): Promise<AnnotationWithBoundingBoxes[]>;
   updateAnnotation(id: string, annotation: Partial<InsertAnnotation>): Promise<Annotation | undefined>;
   deleteAnnotation(id: string): Promise<boolean>;
-  
-  // Export/Import methods
-  exportAnnotationsByFolder(folderId: string): Promise<AnnotationExport | undefined>;
+
+  // Import method
   importAnnotationsByFolder(folderId: string, data: any): Promise<void>;
 
   // Delete methods

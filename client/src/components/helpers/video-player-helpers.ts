@@ -366,6 +366,35 @@ export function isValidBoundingBoxSize(bbox: { width: number; height: number }, 
 }
 
 /**
+ * Check if an annotation has low confidence scores
+ * Returns the type of low confidence issue
+ */
+export function getLowConfidenceIssue(annotation: Annotation & { 
+  classificationConfidence?: number | null;
+  detectionConfidence?: number | null;
+}): {
+  isLowConfidence: boolean;
+  lowClassification: boolean;
+  lowDetection: boolean;
+} {
+  const LOW_CONFIDENCE_THRESHOLD = 0.3;
+  
+  const lowClassification = annotation.classificationConfidence !== undefined && 
+                            annotation.classificationConfidence !== null && 
+                            annotation.classificationConfidence < LOW_CONFIDENCE_THRESHOLD;
+  
+  const lowDetection = annotation.detectionConfidence !== undefined && 
+                       annotation.detectionConfidence !== null && 
+                       annotation.detectionConfidence < LOW_CONFIDENCE_THRESHOLD;
+  
+  return {
+    isLowConfidence: lowClassification || lowDetection,
+    lowClassification,
+    lowDetection
+  };
+}
+
+/**
  * Creates bounding box data object for API calls
  * Uses actual video currentTime for precise timestamp to avoid drift
  */
@@ -406,10 +435,10 @@ export function drawBoundingBox(
   const drawW = bottomRight.x - topLeft.x;
   const drawH = bottomRight.y - topLeft.y;
   const annotationColor = getAnnotationColor(annotations, annotation.id);
-  // Utiliser une couleur vive pour la sélection (cyan brillant) et plus épaisse
-  const strokeColor = isSelected ? '#00FFFF' : annotationColor;
+  // Utiliser un vert lime néon très voyant et unique pour la sélection (différent de toutes les couleurs d'annotation)
+  const strokeColor = isSelected ? '#39FF14' : annotationColor; // Neon green / lime électrique
   // Augmenter l'épaisseur des traits pour une meilleure visibilité
-  const lineWidth = isSelected ? 5 : 3;
+  const lineWidth = isSelected ? 6 : 3;
 
   // Dessiner une ombre portée pour le contraste
   ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
@@ -456,7 +485,7 @@ export function drawBoundingBoxHandles(
   ctx: CanvasRenderingContext2D,
   bbox: BoundingBox,
   handleSize: number = 8,
-  color: string = '#00FFFF'
+  color: string = '#39FF14' // Neon green / lime électrique pour correspondre à la sélection
 ): void {
   ctx.fillStyle = color;
   ctx.shadowColor = "rgba(0, 0, 0, 0.5)";

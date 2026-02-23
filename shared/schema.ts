@@ -48,6 +48,8 @@ export const annotations = pgTable("annotations", {
   signType: varchar("sign_type", { length: 50 }), // Sign type ID (optional)
   gpsLat: real("gps_lat").notNull(),
   gpsLon: real("gps_lon").notNull(),
+  classificationConfidence: real("classification_confidence"),
+  detectionConfidence: real("detection_confidence"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -56,10 +58,13 @@ export const boundingBoxes = pgTable("bounding_boxes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   annotationId: varchar("annotation_id").references(() => annotations.id, { onDelete: "cascade" }).notNull(),
   frameIndex: integer("frame_index").notNull(),
-  frameTimestampMs: bigint("frame_timestamp_ms", { mode: "number" }).notNull(),  bboxX: integer("bbox_x").notNull(),
+  frameTimestampMs: bigint("frame_timestamp_ms", { mode: "number" }).notNull(),
+  bboxX: integer("bbox_x").notNull(),
   bboxY: integer("bbox_y").notNull(),
   bboxWidth: integer("bbox_width").notNull(),
   bboxHeight: integer("bbox_height").notNull(),
+  classificationConfidence: real("classification_confidence"),
+  detectionConfidence: real("detection_confidence"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
@@ -145,8 +150,11 @@ export type AnnotationExport = {
     id: string;
     gps: { lat: number; lon: number };
     label: string;
+    signType?: string;
     created_at: number;
     updated_at: number;
+    classification_confidence?: number;
+    detection_confidence?: number;
     boundingBoxes: Array<{
       frame_index: number;
       frame_timestamp_ms: number;
@@ -155,6 +163,8 @@ export type AnnotationExport = {
       width: number;
       height: number;
       unit: "pixel";
+      classification_confidence?: number;
+      detection_confidence?: number;
     }>;
   }>;
 };
