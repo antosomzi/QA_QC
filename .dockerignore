@@ -1,0 +1,11 @@
+node_modules
+dist
+.git
+.gitignore
+.env
+*.md
+.qwen
+.local
+explication
+replit.md
+drizzle_explanation.md
