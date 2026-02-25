@@ -7,15 +7,26 @@ import AnnotationTool from "@/pages/annotation-tool";
 import ProjectList from "@/pages/project-list";
 import ProjectDetail from "@/pages/project-detail";
 import NotFound from "@/pages/not-found";
+import LoginPage from "@/pages/login";
+import AuthGuard from "@/components/auth-guard";
+import UserMenu from "@/components/user-menu";
 
 function Router() {
   return (
-    <Switch>
-      <Route path="/" component={ProjectList} />
-      <Route path="/project/:projectId" component={ProjectDetail} />
-      <Route path="/folder/:folderId" component={AnnotationTool} />
-      <Route component={NotFound} />
-    </Switch>
+  <Switch>
+    <Route path="/login" component={LoginPage} />
+    <AuthGuard>
+      <div className="absolute top-4 right-4 z-50">
+        <UserMenu />
+      </div>
+      <Switch>
+        <Route path="/" component={ProjectList} />
+        <Route path="/project/:projectId" component={ProjectDetail} />
+        <Route path="/folder/:folderId" component={AnnotationTool} />
+        <Route component={NotFound} />
+      </Switch>
+    </AuthGuard>
+  </Switch>
   );
 }
 

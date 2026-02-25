@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import pg from "pg";
 import { initializeStorage } from "./storage";
 import { insertProjectSchema, insertFolderSchema, insertVideoSchema, insertGpsDataSchema, insertAnnotationSchema, insertBoundingBoxSchema } from "@shared/schema";
 import multer from "multer";
@@ -7,6 +8,9 @@ import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
 import { getVideoMetadata } from "./video-utils";
+import { createSessionMiddleware, createAuthRoutes, requireAuth } from "./auth";
+
+const { Pool } = pg;
 
 // Configure multer for file uploads
 const upload = multer({
@@ -28,7 +32,19 @@ const upload = multer({
 export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize storage based on environment
   const storage = await initializeStorage();
-  
+
+  // Create PostgreSQL pool for session store
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL!,
+  });
+
+  // Add session middleware
+  const sessionMiddleware = createSessionMiddleware(pool);
+  app.use(sessionMiddleware);
+
+  // Add auth routes
+  app.use("/api/auth", createAuthRoutes());
+
   // Debug route - temporary endpoint to see all data in storage
   app.get("/api/debug/memory", async (_req, res) => {
     try {

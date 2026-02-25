@@ -1,7 +1,25 @@
 import { ColumnBaseConfig, ColumnDataType, sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, real, timestamp, jsonb, ExtraConfigColumn, unique, bigint } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, real, timestamp, jsonb, ExtraConfigColumn, unique, bigint, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+// Auth types - pour référence uniquement, pas de table users
+export type AuthUser = {
+  id: string;
+  email: string;
+  name: string;
+  organizationId: string;
+  organizationName: string;
+  isAdmin: boolean;
+  isOrgOwner: boolean;
+};
+
+export const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+export type LoginInput = z.infer<typeof loginSchema>;
 
 export const projects = pgTable("projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

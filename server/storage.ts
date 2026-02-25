@@ -1,9 +1,9 @@
-import { 
-  type Video, 
-  type InsertVideo, 
-  type GpsData, 
-  type InsertGpsData, 
-  type Annotation, 
+import {
+  type Video,
+  type InsertVideo,
+  type GpsData,
+  type InsertGpsData,
+  type Annotation,
   type InsertAnnotation,
   type AnnotationExport,
   type Project,
@@ -21,7 +21,7 @@ export interface IStorage {
   getAllProjects(): Promise<Project[]>;
   updateProject(id: string, updates: Partial<InsertProject>): Promise<Project | undefined>;
   deleteProject(id: string): Promise<boolean>;
-  
+
   // Folder methods
   createFolder(folder: InsertFolder): Promise<Folder>;
   getFolder(id: string): Promise<Folder | undefined>;
@@ -29,17 +29,17 @@ export interface IStorage {
   getAllFolders(): Promise<Folder[]>;
   updateFolder(id: string, updates: Partial<InsertFolder>): Promise<Folder | undefined>;
   deleteFolder(id: string): Promise<boolean>;
-  
+
   // Video methods
   createVideo(video: InsertVideo): Promise<Video>;
   getVideo(id: string): Promise<Video | undefined>;
   getVideosByFolderId(folderId: string): Promise<Video[]>;
   getAllVideos(): Promise<Video[]>;
-  
+
   // GPS data methods
   createGpsData(gpsData: InsertGpsData): Promise<GpsData>;
   getGpsDataByVideoId(videoId: string): Promise<GpsData | undefined>;
-  
+
   // Annotation methods
   createAnnotation(annotation: InsertAnnotation): Promise<Annotation>;
   getAnnotation(id: string): Promise<Annotation | undefined>;

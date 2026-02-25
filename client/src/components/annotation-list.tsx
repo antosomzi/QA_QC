@@ -187,7 +187,7 @@ export default function AnnotationList({
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium" data-testid={`text-annotation-label-${annotation.id}`}>
-                        {annotation.signType}
+                        {signType?.name ?? annotation.signType}
                       </p>
                       {lowConfidence.isLowConfidence && (
                         <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />

@@ -1,11 +1,11 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { 
-  type Video, 
-  type InsertVideo, 
-  type GpsData, 
-  type InsertGpsData, 
-  type Annotation, 
+import {
+  type Video,
+  type InsertVideo,
+  type GpsData,
+  type InsertGpsData,
+  type Annotation,
   type InsertAnnotation,
   type AnnotationExport,
   type Project,
@@ -22,7 +22,7 @@ import {
   annotations,
   boundingBoxes
 } from "@shared/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { IStorage } from "./storage";
 
 export class PostgresStorage implements IStorage {
@@ -354,11 +354,24 @@ export class PostgresStorage implements IStorage {
         detectionConfidence: avgDetectionConfidence,
       };
 
-      const createdAnnotation = await this.createAnnotation(insertAnnotation);
+      // Check if an annotation already exists at this GPS location with the same signType
+      const [existingAnnotation] = await this.db.select()
+        .from(annotations)
+        .where(
+          and(
+            eq(annotations.folderId, folderId),
+            eq(annotations.gpsLat, cluster.gpsLat!),
+            eq(annotations.gpsLon, cluster.gpsLon!),
+            eq(annotations.signType, cluster.signType)
+          )
+        )
+        .limit(1);
+
+      const annotationId = existingAnnotation?.id ?? (await this.db.insert(annotations).values(insertAnnotation).returning())[0].id;
 
       for (const bbox of filteredBboxes) {
         const insertBoundingBox: InsertBoundingBox = {
-          annotationId: createdAnnotation.id,
+          annotationId: annotationId,
           frameIndex: bbox.frameIndex,
           frameTimestampMs: bbox.frameTimestampMs,
           bboxX: bbox.x,
@@ -368,13 +381,21 @@ export class PostgresStorage implements IStorage {
           classificationConfidence: bbox.classificationConfidence,
           detectionConfidence: bbox.detectionConfidence,
         };
-        try {
-          await this.createBoundingBox(insertBoundingBox);
-        } catch (err) {
-          console.error("Erreur création BoundingBox:", err);
-          console.error("Données rejetées:", insertBoundingBox);
-          // Ignore duplicate-frame errors (unique constraint) or other bbox insert issues per bbox
-        }
+        // Use INSERT ... ON CONFLICT DO UPDATE to handle duplicates gracefully
+        await this.db.insert(boundingBoxes)
+          .values(insertBoundingBox)
+          .onConflictDoUpdate({
+            target: [boundingBoxes.annotationId, boundingBoxes.frameIndex],
+            set: {
+              bboxX: insertBoundingBox.bboxX,
+              bboxY: insertBoundingBox.bboxY,
+              bboxWidth: insertBoundingBox.bboxWidth,
+              bboxHeight: insertBoundingBox.bboxHeight,
+              classificationConfidence: insertBoundingBox.classificationConfidence,
+              detectionConfidence: insertBoundingBox.detectionConfidence,
+              updatedAt: new Date(),
+            },
+          });
       }
     }
   }
