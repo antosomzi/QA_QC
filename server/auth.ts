@@ -46,14 +46,13 @@ export function createSessionMiddleware(pool: Pool) {
   return session({
     store,
     secret: sessionSecret,
-    resave: false,
-    saveUninitialized: false,
+    resave: true,  // Force cookie to be set on every response
+    saveUninitialized: true,  // Create session even if not modified
     cookie: {
       httpOnly: true,
       secure: isProduction,
       sameSite: "lax",
       maxAge: 24 * 60 * 60 * 1000,
-      domain: process.env.COOKIE_DOMAIN,
     },
     name: "sessionId",
     rolling: true,
@@ -183,6 +182,9 @@ export function createAuthRoutes(): Router {
       req.session.isAdmin = userData.is_admin || false;
       req.session.isOrgOwner = userData.is_org_owner || false;
 
+      // Force session to be saved by marking it as modified
+      req.session.touch();
+
       // 5. Save and return
       req.session.save((err) => {
         if (err) {
@@ -192,7 +194,11 @@ export function createAuthRoutes(): Router {
 
         console.log("[/api/auth/callback] Session saved successfully");
         console.log("[/api/auth/callback] Session ID:", req.sessionID);
+        console.log("[/api/auth/callback] Session userId:", req.session.userId);
         console.log("[/api/auth/callback] Session cookies set:", res.getHeader("set-cookie") ? "YES" : "NO");
+        if (res.getHeader("set-cookie")) {
+          console.log("[/api/auth/callback] Set-Cookie header:", res.getHeader("set-cookie"));
+        }
 
         console.log("[/api/auth/callback] Login successful for:", userData.email);
         res.json({
