@@ -27,11 +27,20 @@ declare module "express-session" {
 const PgSessionStore = connectPgSimple(session);
 
 export function createSessionMiddleware(pool: Pool) {
-  const sessionSecret = process.env.SESSION_SECRET || "your-secret-key-change-in-production";
+  const sessionSecret = process.env.SESSION_SECRET || "change-me-in-production";
   const store = new PgSessionStore({
     pool,
     tableName: "session",
     createTableIfMissing: true,
+  });
+
+  const isProduction = process.env.NODE_ENV === "production";
+
+  console.log("[Session] Configuration:", {
+    isProduction,
+    secure: isProduction,
+    hasSecret: !!sessionSecret,
+    secretLength: sessionSecret.length,
   });
 
   return session({
@@ -41,12 +50,13 @@ export function createSessionMiddleware(pool: Pool) {
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isProduction,
       sameSite: "lax",
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      maxAge: 24 * 60 * 60 * 1000,
+      domain: process.env.COOKIE_DOMAIN,
     },
     name: "sessionId",
-    rolling: true, // Renew session at each request
+    rolling: true,
   });
 }
 
@@ -67,10 +77,17 @@ export function createAuthRoutes(): Router {
    * Returns current user from session (no DB query)
    */
   router.get("/me", (req: Request, res: Response) => {
+    console.log("[/api/auth/me] Request received");
+    console.log("[/api/auth/me] Session ID:", req.sessionID);
+    console.log("[/api/auth/me] Session userId:", req.session?.userId);
+    console.log("[/api/auth/me] Session keys:", Object.keys(req.session || {}));
+
     if (!req.session?.userId) {
+      console.log("[/api/auth/me] No user in session - returning 401");
       return res.status(401).json({ message: "Not authenticated" });
     }
 
+    console.log("[/api/auth/me] User found:", req.session.email);
     res.json({
       user: {
         id: req.session.userId,
@@ -172,6 +189,10 @@ export function createAuthRoutes(): Router {
           console.error("[/api/auth/callback] Session save error:", err);
           return res.status(500).json({ message: "Session creation failed" });
         }
+
+        console.log("[/api/auth/callback] Session saved successfully");
+        console.log("[/api/auth/callback] Session ID:", req.sessionID);
+        console.log("[/api/auth/callback] Session cookies set:", res.getHeader("set-cookie") ? "YES" : "NO");
 
         console.log("[/api/auth/callback] Login successful for:", userData.email);
         res.json({
