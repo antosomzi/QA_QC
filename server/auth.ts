@@ -77,17 +77,10 @@ export function createAuthRoutes(): Router {
    * Returns current user from session (no DB query)
    */
   router.get("/me", (req: Request, res: Response) => {
-    console.log("[/api/auth/me] Request received");
-    console.log("[/api/auth/me] Session ID:", req.sessionID);
-    console.log("[/api/auth/me] Session userId:", req.session?.userId);
-    console.log("[/api/auth/me] Session keys:", Object.keys(req.session || {}));
-
     if (!req.session?.userId) {
-      console.log("[/api/auth/me] No user in session - returning 401");
       return res.status(401).json({ message: "Not authenticated" });
     }
 
-    console.log("[/api/auth/me] User found:", req.session.email);
     res.json({
       user: {
         id: req.session.userId,
@@ -110,8 +103,6 @@ export function createAuthRoutes(): Router {
     try {
       const { email, password } = req.body;
 
-      console.log("[/api/auth/callback] Login attempt for:", email);
-
       // Basic validation
       if (!email || !password) {
         return res.status(400).json({ message: "Email and password required" });
@@ -125,54 +116,41 @@ export function createAuthRoutes(): Router {
       // 1. Authenticate via external API (Flask expects form-urlencoded)
       const loginResponse = await nodeFetch(`${EXTERNAL_API_URL}/login`, {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/x-www-form-urlencoded"
         },
         body: params.toString(),
         redirect: "manual", // Flask does 302 redirects
       });
 
-      console.log("[/api/auth/callback] Login response status:", loginResponse.status);
-
       // 2. Get external API session cookie
       const setCookieHeader = loginResponse.headers.get("set-cookie");
-      console.log("[/api/auth/callback] Set-Cookie:", setCookieHeader);
 
       if (!setCookieHeader) {
-        // Login failed - no cookie received
-        console.log("[/api/auth/callback] Login failed - no cookie received");
         return res.status(401).json({ message: "Invalid email or password" });
       }
 
       // Parse the cookie (probably "session=...")
       const externalCookie = setCookieHeader.split(";")[0].trim();
-      console.log("[/api/auth/callback] External cookie:", externalCookie);
 
       // 3. Fetch user info from external API
       const meResponse = await nodeFetch(`${EXTERNAL_API_URL}/api/me`, {
-        headers: { 
+        headers: {
           Cookie: externalCookie
         },
       });
 
-      console.log("[/api/auth/callback] /api/me response status:", meResponse.status);
-
       if (!meResponse.ok) {
-        console.log("[/api/auth/callback] Failed to fetch user data");
         return res.status(500).json({ message: "Failed to fetch user data" });
       }
 
       // Check content-type is JSON
       const contentType = meResponse.headers.get("content-type");
       if (!contentType?.includes("application/json")) {
-        const text = await meResponse.text();
-        console.log("[/api/auth/callback] Expected JSON, got:", contentType);
-        console.log("[/api/auth/callback] Response:", text.substring(0, 300));
         return res.status(500).json({ message: "Invalid response from external API" });
       }
 
       const userData: any = await meResponse.json();
-      console.log("[/api/auth/callback] User data:", { id: userData.id, email: userData.email });
 
       // 4. Store EVERYTHING in local session (no DB)
       req.session.userId = userData.id;
@@ -186,19 +164,9 @@ export function createAuthRoutes(): Router {
       // 5. Save and return
       req.session.save((err) => {
         if (err) {
-          console.error("[/api/auth/callback] Session save error:", err);
           return res.status(500).json({ message: "Session creation failed" });
         }
 
-        console.log("[/api/auth/callback] Session saved successfully");
-        console.log("[/api/auth/callback] Session ID:", req.sessionID);
-        console.log("[/api/auth/callback] Session userId:", req.session.userId);
-        console.log("[/api/auth/callback] Session cookies set:", res.getHeader("set-cookie") ? "YES" : "NO");
-        if (res.getHeader("set-cookie")) {
-          console.log("[/api/auth/callback] Set-Cookie header:", res.getHeader("set-cookie"));
-        }
-
-        console.log("[/api/auth/callback] Login successful for:", userData.email);
         res.json({
           user: {
             id: userData.id,
@@ -213,7 +181,6 @@ export function createAuthRoutes(): Router {
       });
 
     } catch (error) {
-      console.error("[/api/auth/callback] Authentication error:", error);
       res.status(500).json({ message: "Authentication server error" });
     }
   });
