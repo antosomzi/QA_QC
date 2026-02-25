@@ -6,10 +6,33 @@ import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
 
-// Enable CORS with credentials for cookie-based auth
+// ✅ CRITIQUE: Faire confiance au proxy nginx pour HTTPS
+app.set("trust proxy", 1);
+
+// CORS configuration
+const isDevelopment = process.env.NODE_ENV === "development";
+
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(",") || true,
+  origin: (origin, callback) => {
+    // Same-origin ou dev
+    if (!origin || isDevelopment) {
+      return callback(null, true);
+    }
+    
+    // Production: accepte ton domaine
+    const allowedOrigins = [
+      "https://qaqc.sci.ce.gatech.edu"
+    ];
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log("[CORS] ❌ Blocked origin:", origin);
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true,
+  exposedHeaders: ["set-cookie"],
 }));
 
 // Allow large JSON payloads for bulk detector imports. Configure via JSON_LIMIT env var (e.g. 50mb).

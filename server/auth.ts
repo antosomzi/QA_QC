@@ -46,8 +46,9 @@ export function createSessionMiddleware(pool: Pool) {
   return session({
     store,
     secret: sessionSecret,
-    resave: true,  // Force cookie to be set on every response
-    saveUninitialized: true,  // Create session even if not modified
+    resave: false,
+    saveUninitialized: false,
+    proxy: true,  // Trust nginx proxy for secure cookies
     cookie: {
       httpOnly: true,
       secure: isProduction,
@@ -182,10 +183,7 @@ export function createAuthRoutes(): Router {
       req.session.isAdmin = userData.is_admin || false;
       req.session.isOrgOwner = userData.is_org_owner || false;
 
-      // Force session to be saved by marking it as modified
-      req.session.touch();
-
-      // 5. Save session first, then send response
+      // 5. Save and return
       req.session.save((err) => {
         if (err) {
           console.error("[/api/auth/callback] Session save error:", err);
@@ -201,10 +199,7 @@ export function createAuthRoutes(): Router {
         }
 
         console.log("[/api/auth/callback] Login successful for:", userData.email);
-        
-        // Send response WITHOUT ending it yet
-        res.setHeader("Content-Type", "application/json");
-        res.write(JSON.stringify({
+        res.json({
           user: {
             id: userData.id,
             email: userData.email,
@@ -214,8 +209,7 @@ export function createAuthRoutes(): Router {
             isAdmin: userData.is_admin,
             isOrgOwner: userData.is_org_owner,
           }
-        }));
-        res.end();
+        });
       });
 
     } catch (error) {
