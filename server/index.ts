@@ -1,9 +1,17 @@
 import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
+import cors from "cors";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
+
+// Enable CORS with credentials for cookie-based auth
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGINS?.split(",") || true,
+  credentials: true,
+}));
+
 // Allow large JSON payloads for bulk detector imports. Configure via JSON_LIMIT env var (e.g. 50mb).
 const jsonLimit = process.env.JSON_LIMIT || "50mb";
 app.use(express.json({ limit: jsonLimit }));

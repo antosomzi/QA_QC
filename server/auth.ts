@@ -185,7 +185,7 @@ export function createAuthRoutes(): Router {
       // Force session to be saved by marking it as modified
       req.session.touch();
 
-      // 5. Save and return
+      // 5. Save session first, then send response
       req.session.save((err) => {
         if (err) {
           console.error("[/api/auth/callback] Session save error:", err);
@@ -201,7 +201,10 @@ export function createAuthRoutes(): Router {
         }
 
         console.log("[/api/auth/callback] Login successful for:", userData.email);
-        res.json({
+        
+        // Send response WITHOUT ending it yet
+        res.setHeader("Content-Type", "application/json");
+        res.write(JSON.stringify({
           user: {
             id: userData.id,
             email: userData.email,
@@ -211,7 +214,8 @@ export function createAuthRoutes(): Router {
             isAdmin: userData.is_admin,
             isOrgOwner: userData.is_org_owner,
           }
-        });
+        }));
+        res.end();
       });
 
     } catch (error) {
