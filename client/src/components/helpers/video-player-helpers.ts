@@ -194,6 +194,16 @@ export function getAnnotationCSSColor(index: number): string {
 }
 
 /**
+ * Convert hex color to RGBA with alpha
+ */
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/**
  * Get hex color for annotation based on index (for canvas drawing and maps)
  */
 export function getAnnotationHexColor(index: number): string {
@@ -464,17 +474,18 @@ export function drawBoundingBox(
   }
 
   // Draw background for label to make it readable
-  ctx.font = isSelected ? 'bold 16px Inter' : 'bold 14px Inter';
+  const fontSize = isSelected ? 32 : 28;
+  ctx.font = `bold ${fontSize}px Inter`;
   const text = annotation.signType;
   const metrics = ctx.measureText(text);
-  const textHeight = parseInt(ctx.font, 10); // Approximation
-  
-  // Fond noir plus opaque pour meilleure lisibilité
-  ctx.fillStyle = isSelected ? 'rgba(0, 0, 0, 0.8)' : 'rgba(0, 0, 0, 0.6)';
+  const textHeight = fontSize; // Use the actual font size
+
+  // Fond de la même couleur que la bounding box avec opacité pour meilleure lisibilité
+  ctx.fillStyle = hexToRgba(strokeColor, 0.8);
   ctx.fillRect(drawX, drawY - textHeight - 8, metrics.width + 10, textHeight + 8);
 
-  // Draw label text in bright white also with stroke
-  ctx.fillStyle = '#FFFFFF'; 
+  // Draw label text in bright white
+  ctx.fillStyle = '#FFFFFF';
   ctx.fillText(text, drawX + 5, drawY - 6);
 }
 
