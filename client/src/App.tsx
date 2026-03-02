@@ -9,16 +9,12 @@ import ProjectDetail from "@/pages/project-detail";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import AuthGuard from "@/components/auth-guard";
-import UserMenu from "@/components/user-menu";
 
 function Router() {
   return (
   <Switch>
     <Route path="/login" component={LoginPage} />
     <AuthGuard>
-      <div className="absolute top-4 right-4 z-50">
-        <UserMenu />
-      </div>
       <Switch>
         <Route path="/" component={ProjectList} />
         <Route path="/project/:projectId" component={ProjectDetail} />

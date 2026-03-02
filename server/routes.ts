@@ -9,7 +9,7 @@ import fs from "fs";
 import { randomUUID } from "crypto";
 import { getVideoMetadata } from "./video-utils";
 import { createSessionMiddleware, createAuthRoutes, requireAuth } from "./auth";
-import { buildS3Key, uploadVideoToS3, getPresignedVideoUrl, deleteVideoFromS3, s3Config } from "./s3-service";
+import { buildS3Key, uploadVideoToS3, getPresignedVideoUrl, deleteVideoFromS3, videoExistsInS3, s3Config } from "./s3-service";
 
 const { Pool } = pg;
 
@@ -29,6 +29,41 @@ const upload = multer({
   fileSize: 15 * 1024 * 1024 * 1024, // 15GB limit
   },
 });
+
+/**
+ * Clean up all video and GPS files (S3 + local) for a given folder.
+ * Call this BEFORE deleting the folder from the DB so we still have the video records.
+ */
+async function cleanupFolderFiles(storage: Awaited<ReturnType<typeof initializeStorage>>, folderId: string) {
+  const videosInFolder = await storage.getVideosByFolderId(folderId);
+  for (const video of videosInFolder) {
+    // Delete from S3
+    if (video.s3Key) {
+      try {
+        await deleteVideoFromS3(video.s3Key);
+      } catch (err) {
+        console.error(`[cleanup] Failed to delete S3 object ${video.s3Key}:`, err);
+      }
+    }
+    // Delete local video file
+    const videoPath = path.join('uploads', video.filename);
+    if (fs.existsSync(videoPath)) {
+      fs.unlinkSync(videoPath);
+    }
+    // Delete associated GPS data file
+    try {
+      const gpsData = await storage.getGpsDataByVideoId(video.id);
+      if (gpsData) {
+        const gpsPath = path.join('uploads', gpsData.filename);
+        if (fs.existsSync(gpsPath)) {
+          fs.unlinkSync(gpsPath);
+        }
+      }
+    } catch {
+      // GPS data might not exist, that's okay
+    }
+  }
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize storage based on environment
@@ -125,6 +160,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/projects/:id", async (req, res) => {
     try {
+      // Clean up all video/GPS files for every folder in this project before DB cascade
+      const projectFolders = await storage.getFoldersByProjectId(req.params.id);
+      for (const folder of projectFolders) {
+        await cleanupFolderFiles(storage, folder.id);
+      }
+
       const success = await storage.deleteProject(req.params.id);
       if (!success) {
         return res.status(404).json({ message: "Project not found" });
@@ -188,6 +229,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/folders/:id", async (req, res) => {
     try {
+      // Clean up video/GPS files (S3 + local) before DB cascade deletes the records
+      await cleanupFolderFiles(storage, req.params.id);
+
       const success = await storage.deleteFolder(req.params.id);
       if (!success) {
         return res.status(404).json({ message: "Folder not found" });
@@ -195,6 +239,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Failed to delete folder" });
+    }
+  });
+
+  // Upload video and auto-create a folder in one operation.
+  // The folder name is derived from the video filename (without extension).
+  app.post("/api/projects/:projectId/upload-video", upload.single('video'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No video file provided" });
+      }
+
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) {
+        // Clean up uploaded file
+        const tempPath = path.join('uploads', req.file.filename);
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      // Derive folder name from video filename (strip extension)
+      const folderName = path.parse(req.file.originalname).name;
+
+      // Check if a folder with the same name already exists in this project
+      const existingFolders = await storage.getFoldersByProjectId(req.params.projectId);
+      const duplicate = existingFolders.find(f => f.name === folderName);
+      if (duplicate) {
+        // Clean up uploaded file
+        const tempPath = path.join('uploads', req.file.filename);
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        return res.status(409).json({
+          message: `A recording named "${folderName}" already exists in this project. Please rename or delete the existing recording before uploading again.`,
+        });
+      }
+
+      // Also check if the video file already exists in S3
+      const s3Key = buildS3Key(req.file.filename);
+      const alreadyInS3 = await videoExistsInS3(s3Key);
+      if (alreadyInS3) {
+        // Clean up uploaded file
+        const tempPath = path.join('uploads', req.file.filename);
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        return res.status(409).json({
+          message: `A video file with the name "${req.file.originalname}" already exists in storage. This video may have been uploaded in another project. Please rename the file or delete the existing video first.`,
+        });
+      }
+
+      // Create folder
+      const folder = await storage.createFolder({
+        name: folderName,
+        projectId: req.params.projectId,
+      });
+
+      // Extract video metadata using ffprobe
+      const videoFilePath = path.join('uploads', req.file.filename);
+      let extractedMetadata = { fps: 30, duration: 0, width: 0, height: 0 };
+      try {
+        extractedMetadata = await getVideoMetadata(videoFilePath);
+        console.log(`[upload-video] Extracted metadata: fps=${extractedMetadata.fps}, duration=${extractedMetadata.duration}`);
+      } catch (probeError) {
+        console.warn(`[upload-video] Failed to probe video metadata, using defaults:`, probeError);
+        extractedMetadata = {
+          fps: req.body.fps ? parseFloat(req.body.fps) : 30,
+          duration: req.body.duration ? parseFloat(req.body.duration) : 0,
+          width: req.body.width ? parseInt(req.body.width) : 0,
+          height: req.body.height ? parseInt(req.body.height) : 0,
+        };
+      }
+
+      // Create video record
+      const videoData = {
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        duration: extractedMetadata.duration,
+        fps: extractedMetadata.fps,
+        width: extractedMetadata.width,
+        height: extractedMetadata.height,
+        folderId: folder.id,
+      };
+
+      const validatedData = insertVideoSchema.parse(videoData);
+      const video = await storage.createVideo(validatedData);
+
+      // Upload to S3
+      try {
+        const s3Key = buildS3Key(req.file.filename);
+        await uploadVideoToS3(videoFilePath, s3Key);
+        await storage.updateVideo(video.id, { s3Key });
+        video.s3Key = s3Key;
+        if (fs.existsSync(videoFilePath)) {
+          fs.unlinkSync(videoFilePath);
+          console.log(`[upload-video] Local file deleted after S3 upload: ${videoFilePath}`);
+        }
+      } catch (s3Error) {
+        console.error(`[upload-video] Failed to upload to S3, keeping local file:`, s3Error);
+      }
+
+      res.json({ folder, video });
+    } catch (error) {
+      res.status(400).json({ message: error instanceof Error ? error.message : "Failed to upload video" });
     }
   });
 

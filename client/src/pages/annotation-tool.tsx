@@ -10,9 +10,10 @@ import FileUpload from "@/components/file-upload";
 import GpsUpload from "@/components/gps-upload";
 import MapOnlyView from "@/components/map-only-view";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { ArrowLeft, Map, Video, X } from "lucide-react";
+import { ArrowLeft, Map, Video, X, Pencil, Check } from "lucide-react";
 import type { Video as VideoType, GpsData, Annotation, AnnotationWithBoundingBoxes, BoundingBox } from "@shared/schema";
 
 export default function AnnotationTool() {
@@ -23,6 +24,8 @@ export default function AnnotationTool() {
   const [showGpsBanner, setShowGpsBanner] = useState<boolean>(true);
   const [currentFrame, setCurrentFrame] = useState(0);
   const [viewMode, setViewMode] = useState<"video" | "map">("video");
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState("");
   const { toast } = useToast();
   const videoPlayerRef = useRef<VideoPlayerHandle | null>(null);
 
@@ -441,6 +444,31 @@ export default function AnnotationTool() {
     setViewMode(viewMode === "video" ? "map" : "video");
   };
 
+  // Folder rename
+  const handleStartRename = useCallback(() => {
+    if (folder) {
+      setEditedName(folder.name);
+      setIsEditingName(true);
+    }
+  }, [folder]);
+
+  const handleConfirmRename = useCallback(async () => {
+    if (!editedName.trim() || !folder) return;
+    if (editedName.trim() === folder.name) {
+      setIsEditingName(false);
+      return;
+    }
+    try {
+      await apiRequest("PUT", `/api/folders/${folderId}`, { name: editedName.trim() });
+      // Refresh folder data
+      queryClient.invalidateQueries({ queryKey: ["folder", folderId] });
+      setIsEditingName(false);
+      toast({ title: "Folder renamed" });
+    } catch {
+      toast({ title: "Error", description: "Failed to rename folder.", variant: "destructive" });
+    }
+  }, [editedName, folder, folderId, toast]);
+
   return (
     <div className="h-screen bg-background text-foreground flex flex-col">
       {/* Header */}
@@ -474,8 +502,36 @@ export default function AnnotationTool() {
                 Video View
               </Button>
             )}
-            <h1 className="text-xl font-semibold text-foreground">
-              {viewMode === "video" ? "Video Annotation Tool" : "Map Annotation Tool"}
+            <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
+              {isEditingName ? (
+                <span className="flex items-center gap-2">
+                  <Input
+                    value={editedName}
+                    onChange={(e) => setEditedName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleConfirmRename();
+                      if (e.key === "Escape") setIsEditingName(false);
+                    }}
+                    className="h-8 w-64 text-lg font-semibold"
+                    autoFocus
+                  />
+                  <Button variant="ghost" size="sm" onClick={handleConfirmRename} className="h-8 w-8 p-0">
+                    <Check className="w-4 h-4 text-green-600" />
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setIsEditingName(false)} className="h-8 w-8 p-0">
+                    <X className="w-4 h-4 text-gray-400" />
+                  </Button>
+                </span>
+              ) : (
+                <span
+                  className="cursor-pointer hover:text-blue-600 transition-colors group flex items-center gap-2"
+                  onClick={handleStartRename}
+                  title="Click to rename"
+                >
+                  {folder?.name || (viewMode === "video" ? "Video Annotation Tool" : "Map Annotation Tool")}
+                  <Pencil className="w-3.5 h-3.5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </span>
+              )}
             </h1>
             <div className="flex items-center space-x-2 text-sm text-muted-foreground">
               <span className="w-2 h-2 bg-primary rounded-full"></span>
