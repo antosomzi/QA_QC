@@ -8,6 +8,13 @@
       "when": 1771885448914,
       "tag": "0000_stormy_deadpool",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1772482203087,
+      "tag": "0001_dapper_morbius",
+      "breakpoints": true
     }
   ]
 }
