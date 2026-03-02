@@ -12,6 +12,10 @@ services:
       # S3 video storage
       - S3_BUCKET_NAME=${S3_BUCKET_NAME:-qa-qc-app}
       - S3_REGION=${S3_REGION:-us-east-2}
+      # AWS credentials (leave empty to use IAM instance role on EC2)
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_DEFAULT_REGION=${S3_REGION:-us-east-2}
     depends_on:
       db:
         condition: service_healthy
