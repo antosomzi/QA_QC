@@ -35,6 +35,7 @@ export interface IStorage {
   getVideo(id: string): Promise<Video | undefined>;
   getVideosByFolderId(folderId: string): Promise<Video[]>;
   getAllVideos(): Promise<Video[]>;
+  updateVideo(id: string, updates: Partial<InsertVideo>): Promise<Video | undefined>;
 
   // GPS data methods
   createGpsData(gpsData: InsertGpsData): Promise<GpsData>;

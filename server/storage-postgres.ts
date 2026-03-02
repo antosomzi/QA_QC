@@ -123,6 +123,11 @@ export class PostgresStorage implements IStorage {
     return await this.db.select().from(videos);
   }
 
+  async updateVideo(id: string, updates: Partial<InsertVideo>): Promise<Video | undefined> {
+    const [video] = await this.db.update(videos).set(updates).where(eq(videos.id, id)).returning();
+    return video;
+  }
+
   // GPS data methods
   async createGpsData(insertGpsData: InsertGpsData): Promise<GpsData> {
     const [gpsDataEntry] = await this.db.insert(gpsData).values(insertGpsData).returning();

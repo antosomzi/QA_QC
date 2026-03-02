@@ -1,7 +1,15 @@
 import { ColumnBaseConfig, ColumnDataType, sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, real, timestamp, jsonb, ExtraConfigColumn, unique, bigint, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, real, timestamp, jsonb, json, ExtraConfigColumn, unique, bigint, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+// Session table created by connect-pg-simple.
+// Declared here so drizzle-kit is aware of it and won't try to drop it during push/migrate.
+export const sessionTable = pgTable("session", {
+  sid: varchar("sid").primaryKey(),
+  sess: json("sess").notNull(),
+  expire: timestamp("expire", { precision: 6, withTimezone: false }).notNull(),
+});
 
 // Auth types - pour référence uniquement, pas de table users
 export type AuthUser = {
@@ -45,6 +53,7 @@ export const videos = pgTable("videos", {
   fps: real("fps"),
   width: integer("width"),
   height: integer("height"),
+  s3Key: text("s3_key"), // S3 object key for video storage (e.g. "video/production/<id>/file.mp4")
   folderId: varchar("folder_id").references(() => folders.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow(),
 });

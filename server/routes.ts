@@ -9,6 +9,7 @@ import fs from "fs";
 import { randomUUID } from "crypto";
 import { getVideoMetadata } from "./video-utils";
 import { createSessionMiddleware, createAuthRoutes, requireAuth } from "./auth";
+import { buildS3Key, uploadVideoToS3, getPresignedVideoUrl, deleteVideoFromS3, s3Config } from "./s3-service";
 
 const { Pool } = pg;
 
@@ -246,6 +247,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertVideoSchema.parse(videoData);
       const video = await storage.createVideo(validatedData);
 
+      // Upload video to S3 and store the key
+      try {
+        const s3Key = buildS3Key(req.file.filename);
+        await uploadVideoToS3(videoFilePath, s3Key);
+        // Update the video record with the S3 key
+        await storage.updateVideo(video.id, { s3Key });
+        video.s3Key = s3Key;
+        // Remove local file after successful S3 upload
+        if (fs.existsSync(videoFilePath)) {
+          fs.unlinkSync(videoFilePath);
+          console.log(`[upload] Local file deleted after S3 upload: ${videoFilePath}`);
+        }
+      } catch (s3Error) {
+        console.error(`[upload] Failed to upload video to S3, keeping local file:`, s3Error);
+        // Video stays in local uploads/ as fallback
+      }
+
       // Associer toutes les annotations du folder à la vidéo si elles n'ont pas de videoId
       const annotations = await storage.getAnnotationsByFolderId(req.params.folderId);
       for (const annotation of annotations) {
@@ -291,16 +309,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Serve uploaded video files
+  // If the video has an S3 key, redirect to a presigned URL; otherwise serve from local disk.
   app.get("/api/videos/:id/file", async (req, res) => {
     try {
       const video = await storage.getVideo(req.params.id);
       if (!video) {
         return res.status(404).json({ message: "Video not found" });
       }
-      
+
+      // Prefer S3 if available
+      if (video.s3Key) {
+        const presignedUrl = await getPresignedVideoUrl(video.s3Key);
+        return res.redirect(presignedUrl);
+      }
+
+      // Fallback: serve from local uploads/
       const filePath = path.join('uploads', video.filename);
       if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ message: "Video file not found" });
+        return res.status(404).json({ message: "Video file not found (neither S3 nor local)" });
       }
       
       res.sendFile(path.resolve(filePath));
@@ -333,7 +359,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // GPS data might not exist, that's okay
       }
 
-      // Delete the video file from disk
+      // Delete the video file from S3 if it was stored there
+      if (video.s3Key) {
+        await deleteVideoFromS3(video.s3Key);
+      }
+
+      // Delete the local video file if it exists
       const videoFilePath = path.join('uploads', video.filename);
       if (fs.existsSync(videoFilePath)) {
         fs.unlinkSync(videoFilePath);

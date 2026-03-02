@@ -445,8 +445,8 @@ export function drawBoundingBox(
   const drawW = bottomRight.x - topLeft.x;
   const drawH = bottomRight.y - topLeft.y;
   const annotationColor = getAnnotationColor(annotations, annotation.id);
-  // Utiliser un vert lime néon très voyant et unique pour la sélection (différent de toutes les couleurs d'annotation)
-  const strokeColor = isSelected ? '#39FF14' : annotationColor; // Neon green / lime électrique
+  // Utiliser un violet néon très distinct pour la sélection (différent de toutes les couleurs d'annotation)
+  const strokeColor = isSelected ? '#BF00FF' : annotationColor; // Violet néon électrique
   // Augmenter l'épaisseur des traits pour une meilleure visibilité
   const lineWidth = isSelected ? 6 : 3;
 
@@ -496,7 +496,7 @@ export function drawBoundingBoxHandles(
   ctx: CanvasRenderingContext2D,
   bbox: BoundingBox,
   handleSize: number = 8,
-  color: string = '#39FF14' // Neon green / lime électrique pour correspondre à la sélection
+  color: string = '#BF00FF' // Violet néon pour correspondre à la sélection
 ): void {
   ctx.fillStyle = color;
   ctx.shadowColor = "rgba(0, 0, 0, 0.5)";

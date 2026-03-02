@@ -9,6 +9,9 @@ services:
       - NODE_ENV=production
       - PORT=${PORT}
       - DATABASE_URL=${DATABASE_URL}
+      # S3 video storage
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-qa-qc-app}
+      - S3_REGION=${S3_REGION:-us-east-2}
     depends_on:
       db:
         condition: service_healthy

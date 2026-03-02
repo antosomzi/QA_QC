@@ -96,39 +96,39 @@ export default function BoundingBoxList({
         </div>
       </div>
 
-      {/* Low confidence warning banner */}
-      {(() => {
-        const lowConfidence = getLowConfidenceIssue(annotation);
-        if (!lowConfidence.isLowConfidence) return null;
-        
-        // Determine the title based on which confidence is low
-        let title = "Low confidence";
-        if (lowConfidence.lowClassification && lowConfidence.lowDetection) {
-          title = "Low confidence: detection & classification";
-        } else if (lowConfidence.lowClassification) {
-          title = "Low confidence: classification";
-        } else if (lowConfidence.lowDetection) {
-          title = "Low confidence: detection";
-        }
-        
-        return (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-              <div className="text-sm">
-                <p className="font-medium text-red-800">{title}</p>
-                <p className="text-red-500 text-xs mt-1">
-                  {lowConfidence.lowClassification && `Classification: ${(annotation.classificationConfidence! * 100).toFixed(0)}%`}
-                  {lowConfidence.lowClassification && lowConfidence.lowDetection && ` • `}
-                  {lowConfidence.lowDetection && `Detection: ${(annotation.detectionConfidence! * 100).toFixed(0)}%`}
-                </p>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-      
       <div className="flex-1 overflow-y-auto space-y-2">
+        {/* Low confidence warning banner - inside scrollable container */}
+        {(() => {
+          const lowConfidence = getLowConfidenceIssue(annotation);
+          if (!lowConfidence.isLowConfidence) return null;
+
+          // Determine the title based on which confidence is low
+          let title = "Low confidence";
+          if (lowConfidence.lowClassification && lowConfidence.lowDetection) {
+            title = "Low confidence: detection & classification";
+          } else if (lowConfidence.lowClassification) {
+            title = "Low confidence: classification";
+          } else if (lowConfidence.lowDetection) {
+            title = "Low confidence: detection";
+          }
+
+          return (
+            <Card className="p-3 bg-red-50 border border-red-200">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-medium text-red-800">{title}</p>
+                  <p className="text-red-500 text-xs mt-1">
+                    {lowConfidence.lowClassification && `Classification: ${(annotation.classificationConfidence! * 100).toFixed(0)}%`}
+                    {lowConfidence.lowClassification && lowConfidence.lowDetection && ` • `}
+                    {lowConfidence.lowDetection && `Detection: ${(annotation.detectionConfidence! * 100).toFixed(0)}%`}
+                  </p>
+                </div>
+              </div>
+            </Card>
+          );
+        })()}
+
         {annotationBoundingBoxes.map((bbox) => {
           const isCurrentFrame = bbox.frameIndex === currentFrame;
           const timeInSeconds = bbox.frameTimestampMs / 1000;

@@ -131,13 +131,38 @@ const canvasCoords = getCanvasCoordinates(e, canvasRef);
 - Cascade deletes: project → folder → video → annotations → bounding boxes
 - GPS data stored as JSONB array in `gps_data.data`
 - Unique constraint on `(annotationId, frameIndex)` for bounding boxes
+- `videos.s3_key` stores the S3 object key (nullable for backward compatibility with local files)
 
 ## Integration Points
 
 ### External Dependencies
 - **Leaflet**: Loaded via CDN in `client/index.html`
 - **PostgreSQL**: Local database via standard `postgres` driver (not Neon)
+- **AWS S3**: Video file storage via `@aws-sdk/client-s3` (see below)
 - **Replit Platform**: Development plugins in `vite.config.ts`
+
+### S3 Video Storage
+Videos are stored in Amazon S3 instead of the local filesystem. The service is in `server/s3-service.ts`.
+
+**Bucket layout:**
+```
+s3://qa-qc-app/video/<environment>/<videoId>/<filename>.mp4
+```
+- `environment` = `production` when `NODE_ENV=production`, otherwise `development`
+- On upload: video is first saved locally for ffprobe metadata extraction, then uploaded to S3, then the local copy is deleted
+- On serve (`GET /api/videos/:id/file`): the server generates a presigned S3 URL (1 h validity) and redirects the browser there
+- On delete: the S3 object is deleted alongside the database record
+- Fallback: if `s3Key` is null (legacy videos), the server falls back to serving from local `uploads/`
+
+**Key files:**
+- `server/s3-service.ts` – S3 upload, presigned URL, delete, exists helpers
+- `shared/schema.ts` – `videos.s3Key` column stores the S3 object key
+- `.env` – `S3_BUCKET_NAME`, `S3_REGION`, optional `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
+- `docker-compose.yml` – passes S3 and AWS env vars to the app container
+
+**AWS credentials:**
+- On EC2: use an IAM instance role (no explicit keys needed)
+- Locally: set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `.env`
 
 ### Component Communication
 - Parent-child props for data flow

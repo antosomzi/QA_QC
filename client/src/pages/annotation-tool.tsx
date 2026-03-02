@@ -444,7 +444,7 @@ export default function AnnotationTool() {
   return (
     <div className="h-screen bg-background text-foreground flex flex-col">
       {/* Header */}
-      <header className="bg-card border-b border-border px-6 py-4">
+      <header className="bg-card border-b border-border px-6 py-4 pr-32">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             {viewMode === "video" ? (
