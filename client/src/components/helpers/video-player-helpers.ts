@@ -354,18 +354,66 @@ export function setCursorForHandle(canvas: HTMLCanvasElement, handle: string | n
 }
 
 /**
- * Calculates frame number from video time with offset correction
+ * Calculates frame number from video time with offset correction.
+ * If ptsData is provided, uses binary search for VFR-accurate mapping.
+ * Falls back to CFR calculation (Math.floor + epsilon) when no PTS data.
  */
-export function calculateFrameFromTime(time: number, fps: number): number {
-  return Math.round(time * fps);
+export function calculateFrameFromTime(time: number, fps: number, ptsData?: number[]): number {
+  if (ptsData && ptsData.length > 0) {
+    return ptsDataBinarySearch(ptsData, time);
+  }
+  // CFR fallback: Math.floor + epsilon for consistency
+  return Math.floor(time * fps + 0.001);
 }
 
 /**
- * Calculates video time from frame number with offset correction
+ * Calculates video time from frame number.
+ * If ptsData is provided, returns the exact PTS for that frame (VFR-safe).
+ * Falls back to mid-frame offset CFR calculation when no PTS data.
  */
-export function calculateTimeFromFrame(frame: number, fps: number): number {
-  // Adding 0.3 offset as documented in bug_video_correction.md
+export function calculateTimeFromFrame(frame: number, fps: number, ptsData?: number[]): number {
+  if (ptsData && frame >= 0 && frame < ptsData.length) {
+    // For PTS-based seeking, target the midpoint between this frame's PTS
+    // and the next frame's PTS to ensure the browser shows the correct frame.
+    // This is the VFR equivalent of the +0.5 mid-frame trick for CFR.
+    if (frame + 1 < ptsData.length) {
+      return (ptsData[frame] + ptsData[frame + 1]) / 2;
+    }
+    // Last frame: add a small offset past the PTS
+    return ptsData[frame] + 0.001;
+  }
+  // CFR fallback: +0.3 offset as documented in bug_video_correction.md
   return (frame + 0.3) / fps;
+}
+
+/**
+ * Binary search to find the closest frame index for a given time in PTS data.
+ * Returns the index of the frame whose PTS is closest to the target time.
+ * For VFR videos, this is the only correct way to map time → frame.
+ */
+export function ptsDataBinarySearch(ptsData: number[], time: number): number {
+  if (ptsData.length === 0) return 0;
+  if (time <= ptsData[0]) return 0;
+  if (time >= ptsData[ptsData.length - 1]) return ptsData.length - 1;
+
+  let lo = 0;
+  let hi = ptsData.length - 1;
+
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >>> 1;
+    if (ptsData[mid] <= time) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+
+  // lo is the last frame whose PTS <= time, hi is the first frame whose PTS > time
+  // Return whichever is closer
+  if (hi < ptsData.length && (time - ptsData[lo]) > (ptsData[hi] - time)) {
+    return hi;
+  }
+  return lo;
 }
 
 /**

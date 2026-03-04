@@ -54,6 +54,7 @@ export const videos = pgTable("videos", {
   width: integer("width"),
   height: integer("height"),
   s3Key: text("s3_key"), // S3 object key for video storage (e.g. "video/production/<id>/file.mp4")
+  ptsData: jsonb("pts_data"), // Array of PTS (presentation timestamps) in seconds, one per frame. Needed for VFR videos.
   folderId: varchar("folder_id").references(() => folders.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow(),
 });

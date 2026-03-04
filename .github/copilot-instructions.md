@@ -40,42 +40,29 @@ const gpsPoint = getGPSForFrame(gpsPoints, frameIndex, fps);
 - GPS data supports CSV (timestamp_ms,lat,lon) and JSON formats
 - Timestamps are interpolated between GPS points when exact frame matches don't exist
 - GPS coordinates are calculated using linear interpolation between nearest GPS points
-- Video time (seconds) is converted to frame index: `Math.round(time * fps)`
+- Video time → frame index conversion uses PTS-aware `calculateFrameFromTime()` (see VFR section above)
 
 ### Video Player Frame Management
-The video player uses a sophisticated frame synchronization system:
+The video player uses a sophisticated frame synchronization system with **VFR (Variable Frame Rate) support** via PTS data. See [`explication/vfr_pts_frame_sync.md`](../explication/vfr_pts_frame_sync.md) for full documentation.
 
-**Single Source of Truth Pattern:**
+**PTS-Based Navigation (VFR-safe):**
 ```typescript
-// Video time drives frame updates, not the reverse
-const handleTimeUpdate = useCallback(() => {
-  if (isManualNavigation) return; // Skip during manual navigation
-  const time = videoRef.current.currentTime;
-  const frame = Math.round(time * video.fps); // Math.round for better sync
-  if (frame !== currentFrame) {
-    onFrameChange(frame);
-  }
-}, [video.fps, onFrameChange, isManualNavigation, currentFrame]);
-```
+// Frame → Time: look up actual PTS timestamp, seek to midpoint for reliable display
+const seekTime = (ptsData[frame] + ptsData[frame + 1]) / 2;
+videoRef.current.currentTime = seekTime;
 
-**Manual Frame Navigation System:**
-```typescript
-// Precise frame-by-frame navigation with temporal positioning
-const navigateToFrame = useCallback((targetFrame: number) => {
-  setIsManualNavigation(true);
-  // Position at middle of frame for reliable display update
-  const targetTime = (targetFrame + 0.5) / video.fps;
-  videoRef.current.currentTime = targetTime;
-  onFrameChange(targetFrame);
-  setTimeout(() => setIsManualNavigation(false), 100);
-}, [video.fps, onFrameChange]);
+// Time → Frame: binary search in PTS array (used in rVFC loop and all time→frame conversions)
+const frameIndex = ptsDataBinarySearch(ptsData, mediaTime);
 ```
 
 **Key Video Player Insights:**
-- Uses `+0.5` frame offset to  Garantit une distance suffisante par rapport au temps actuel
-- This prevents visual update bugs when navigating between nearby frames  
-- Manual navigation temporarily disables automatic time-based updates
-- `Math.round()` provides better frame synchronization than `Math.floor()`
+- Videos are often VFR (variable frame rate) — `frame/fps` does NOT reliably map to the correct time
+- At upload, ffprobe extracts per-frame PTS timestamps stored as `ptsData` JSONB in the `videos` table
+- Frontend fetches PTS via `GET /api/videos/:id/pts`, passes to VideoPlayer as a prop
+- `calculateTimeFromFrame(frame, fps, ptsData)` and `calculateFrameFromTime(time, fps, ptsData)` handle both VFR (PTS lookup/binary search) and CFR (fallback math) transparently
+- All 7 navigation paths use these PTS-aware helpers: `seekToFrame`, `goToNextFrame`, `goToPreviousFrame`, `getActualFrame`, rVFC loop, `handleTimeUpdate`, progress bar drag
+- When `ptsData` is `null` (legacy uploads), the system falls back to CFR math: `(frame + 0.3) / fps` for seeking, `Math.floor(time * fps + 0.001)` for frame calculation
+- `requestVideoFrameCallback` provides `metadata.mediaTime` — the exact time of the displayed frame — which is fed into the binary search
 
 ### Annotation-BoundingBox Relationship
 Core domain model separating objects from their temporal positions:
@@ -96,13 +83,21 @@ Core domain model separating objects from their temporal positions:
 npm run dev
 
 # Database operations
-npm run db:push              # Push schema changes to DB
-# No migrations - uses Drizzle push mode
+npm run db:push              # Push schema changes to local DB (dev only)
+npx drizzle-kit generate     # Generate SQL migration file after schema changes
+npx tsx scripts/migrate.ts   # Run migrations (used in production)
 
 # Production build
 npm run build               # Builds client + server bundle
 npm start                  # Runs production server
 ```
+
+### ⚠️ Database Migration Rule
+**Every time the schema (`shared/schema.ts`) is modified, you MUST generate a migration file:**
+```bash
+npx drizzle-kit generate
+```
+This creates a numbered SQL file in `migrations/` (e.g. `0002_lean_jimmy_woo.sql`). Production deployments run `scripts/migrate.ts` which applies these files — without a generated migration, schema changes will NOT reach production. `drizzle-kit push` is only for local dev convenience and does NOT create migration files.
 
 ## Critical Code Patterns
 
@@ -130,6 +125,7 @@ const canvasCoords = getCanvasCoordinates(e, canvasRef);
 - UUID primary keys with PostgreSQL `gen_random_uuid()`
 - Cascade deletes: project → folder → video → annotations → bounding boxes
 - GPS data stored as JSONB array in `gps_data.data`
+- PTS data stored as JSONB array in `videos.pts_data` (per-frame timestamps for VFR support)
 - Unique constraint on `(annotationId, frameIndex)` for bounding boxes
 - `videos.s3_key` stores the S3 object key (nullable for backward compatibility with local files)
 

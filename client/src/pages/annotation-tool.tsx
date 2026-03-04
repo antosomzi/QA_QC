@@ -60,6 +60,18 @@ export default function AnnotationTool() {
     enabled: !!selectedVideo,
   });
 
+  // Fetch PTS data for VFR-safe frame navigation
+  const { data: ptsData } = useQuery<number[] | null>({
+    queryKey: ["video-pts", selectedVideo?.id],
+    queryFn: async () => {
+      if (!selectedVideo) return null;
+      const response = await fetch(`/api/videos/${selectedVideo.id}/pts`);
+      const data = await response.json();
+      return data.ptsData ?? null;
+    },
+    enabled: !!selectedVideo,
+  });
+
   // Fetch annotations with bounding boxes for selected folder
   const { data: annotationsWithBboxes = [], refetch: refetchAnnotations } = useQuery<AnnotationWithBoundingBoxes[]>({
     queryKey: ["folder-annotations-with-bboxes", folderId],
@@ -611,6 +623,7 @@ export default function AnnotationTool() {
                     <VideoPlayer
                       video={selectedVideo}
                       gpsData={gpsData ?? undefined}
+                      ptsData={ptsData ?? undefined}
                       annotations={annotations}
                       boundingBoxes={boundingBoxes}
                       currentFrame={currentFrame}

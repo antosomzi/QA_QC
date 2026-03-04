@@ -1,10 +1,12 @@
 import ffmpeg from 'fluent-ffmpeg';
+import { execFile } from 'child_process';
 
 export interface VideoMetadata {
   fps: number;
   duration: number;
   width: number;
   height: number;
+  ptsData: number[] | null; // Array of PTS (seconds) per frame — null if extraction fails
 }
 
 /**
@@ -84,10 +86,49 @@ export function getVideoMetadata(filePath: string): Promise<VideoMetadata> {
         duration: metadata.format.duration || 0,
         width: videoStream.width || 0,
         height: videoStream.height || 0,
+        ptsData: null, // Will be populated separately by extractPtsData
       };
 
       console.log(`[video-utils] Extracted metadata for ${filePath}:`, result);
       resolve(result);
+    });
+  });
+}
+
+/**
+ * Extract per-frame PTS (presentation timestamps) from a video file using ffprobe.
+ * Returns a sorted array of PTS values in seconds, one per frame.
+ * This is essential for VFR (Variable Frame Rate) videos where frame N
+ * is NOT at time N/fps.
+ */
+export function extractPtsData(filePath: string): Promise<number[]> {
+  return new Promise((resolve, reject) => {
+    // Use ffprobe to dump all packet PTS for the video stream
+    execFile('ffprobe', [
+      '-v', 'quiet',
+      '-select_streams', 'v:0',
+      '-show_entries', 'packet=pts_time',
+      '-of', 'csv=p=0',
+      filePath
+    ], { maxBuffer: 100 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) {
+        console.warn(`[video-utils] Failed to extract PTS data: ${err.message}`);
+        reject(err);
+        return;
+      }
+
+      const pts = stdout
+        .trim()
+        .split('\n')
+        .filter(line => line.trim().length > 0)
+        .map(line => parseFloat(line.trim()))
+        .filter(v => !isNaN(v));
+
+      // Sort PTS in case packets arrived out of order (B-frames)
+      pts.sort((a, b) => a - b);
+
+      console.log(`[video-utils] Extracted ${pts.length} PTS values for ${filePath} (first=${pts[0]?.toFixed(4)}, last=${pts[pts.length - 1]?.toFixed(4)})`);
+      resolve(pts);
     });
   });
 }

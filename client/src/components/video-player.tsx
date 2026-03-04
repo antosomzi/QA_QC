@@ -12,6 +12,7 @@ import {
   setCursorForHandle,
   calculateFrameFromTime,
   calculateTimeFromFrame,
+  ptsDataBinarySearch,
   isValidBoundingBoxSize,
   createBoundingBoxData,
   drawBoundingBox,
@@ -32,6 +33,7 @@ type DrawingBBox = {
 interface VideoPlayerProps {
   video: Video;
   gpsData?: GpsData;
+  ptsData?: number[];
   annotations: Annotation[];
   boundingBoxes: BoundingBox[];
   currentFrame: number;
@@ -73,6 +75,7 @@ export interface VideoPlayerHandle {
 const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
   video,
   gpsData,
+  ptsData,
   annotations,
   boundingBoxes,
   currentFrame,
@@ -123,6 +126,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
     isResizing
   });
 
+  // PTS data ref for rVFC loop (avoids stale closure)
+  const ptsDataRef = useRef(ptsData);
+
   // Keep the ref mirror synchronized with React state
   useEffect(() => {
     drawingDataRef.current = {
@@ -136,25 +142,30 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
     };
   }, [boundingBoxes, annotations, selectedAnnotationId, selectedBoundingBox, currentBBox, isMoving, isResizing]);
 
+  // Keep PTS ref in sync
+  useEffect(() => {
+    ptsDataRef.current = ptsData;
+  }, [ptsData]);
+
   // FPS is now extracted from video file at upload time using ffprobe
   // No frontend correction needed - we trust the database value
   const fps = video.fps || 30;
 
   // CRITICAL: Always read directly from video element, not React state
   // React state updates are async and can lag behind actual video position
-  // Use Math.floor + epsilon to avoid off-by-one errors from float precision
+  // Uses PTS binary search for VFR videos, falls back to Math.floor + epsilon for CFR
   const getActualFrame = useCallback(() => {
     if (!fps || !videoRef.current) return 0;
-    return Math.floor(videoRef.current.currentTime * fps + 0.001);
-  }, [fps]);
+    return calculateFrameFromTime(videoRef.current.currentTime, fps, ptsData);
+  }, [fps, ptsData]);
 
   const seekToFrame = useCallback((frame: number) => {
     if (!videoRef.current || !fps) return;
-    const targetTime = calculateTimeFromFrame(frame, fps);
+    const targetTime = calculateTimeFromFrame(frame, fps, ptsData);
     videoRef.current.currentTime = targetTime;
     setCurrentTime(targetTime);
     lastFrameRef.current = frame;
-  }, [fps]);
+  }, [fps, ptsData]);
 
   useImperativeHandle(ref, () => ({ seekToFrame }), [seekToFrame]);
 
@@ -232,8 +243,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
     const updateFrameLoop = (now: number, metadata: VideoFrameCallbackMetadata) => {
       // metadata.mediaTime is the EXACT time of the frame displayed on screen
       const exactTime = metadata.mediaTime;
-      // Use Math.floor + epsilon to avoid off-by-one frame errors from float precision
-      const exactFrame = Math.floor(exactTime * fps + 0.001);
+      // Use PTS binary search for VFR, fallback to CFR calculation
+      const pts = ptsDataRef.current;
+      const exactFrame = pts && pts.length > 0
+        ? ptsDataBinarySearch(pts, exactTime)
+        : Math.floor(exactTime * fps + 0.001);
 
       // IMMEDIATE: Draw canvas directly in the callback (no React lag)
       drawCanvasForFrame(exactFrame);
@@ -277,14 +291,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
       const time = videoRef.current.currentTime;
       setCurrentTime(time);
       
-      // Use Math.floor + epsilon for consistency with requestVideoFrameCallback
-      const frame = Math.floor(time * fps + 0.001);
+      // Use PTS-aware frame calculation for VFR support
+      const frame = calculateFrameFromTime(time, fps, ptsData);
       if (frame !== lastFrameRef.current) {
         lastFrameRef.current = frame;
         onFrameChange(frame);
       }
     }
-  }, [fps, onFrameChange, isPlaying]);
+  }, [fps, ptsData, onFrameChange, isPlaying]);
 
 
   // Handle video metadata loaded
@@ -323,28 +337,32 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
   // Frame navigation - directly manipulate video.currentTime
   const goToPreviousFrame = useCallback(() => {
     if (fps && videoRef.current) {
-      const actualFrame = Math.floor(videoRef.current.currentTime * fps + 0.001);
+      const actualFrame = calculateFrameFromTime(videoRef.current.currentTime, fps, ptsData);
       if (actualFrame > 0) {
-        const targetTime = (actualFrame - 1) / fps;
+        const targetFrame = actualFrame - 1;
+        const targetTime = calculateTimeFromFrame(targetFrame, fps, ptsData);
         videoRef.current.currentTime = targetTime;
         setCurrentTime(targetTime);
-        onFrameChange(actualFrame - 1);
+        lastFrameRef.current = targetFrame;
+        onFrameChange(targetFrame);
       }
     }
-  }, [fps, videoRef, onFrameChange]);
+  }, [fps, ptsData, videoRef, onFrameChange]);
 
   const goToNextFrame = useCallback(() => {
     if (fps && duration && videoRef.current) {
-      const actualFrame = Math.floor(videoRef.current.currentTime * fps + 0.001);
-      const totalFrames = Math.floor(duration * fps);
+      const actualFrame = calculateFrameFromTime(videoRef.current.currentTime, fps, ptsData);
+      const totalFrames = ptsData ? ptsData.length : Math.floor(duration * fps);
       if (actualFrame < totalFrames - 1) {
-        const targetTime = (actualFrame + 1) / fps;
+        const targetFrame = actualFrame + 1;
+        const targetTime = calculateTimeFromFrame(targetFrame, fps, ptsData);
         videoRef.current.currentTime = targetTime;
         setCurrentTime(targetTime);
-        onFrameChange(actualFrame + 1);
+        lastFrameRef.current = targetFrame;
+        onFrameChange(targetFrame);
       }
     }
-  }, [fps, duration, videoRef, onFrameChange]);
+  }, [fps, ptsData, duration, videoRef, onFrameChange]);
 
   // Canvas drawing functions
   const getCanvasCoordinatesLocal = useCallback((e: React.MouseEvent) => {
@@ -438,10 +456,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
     
     // Sync frame state after dragging ends
     if (videoRef.current && fps) {
-      const targetFrame = Math.floor(finalTime * fps + 0.001);
+      const targetFrame = calculateFrameFromTime(finalTime, fps, ptsData);
       onFrameChange(targetFrame);
     }
-  }, [isDraggingProgress, previewTime, currentTime, videoRef, fps, onFrameChange]);
+  }, [isDraggingProgress, previewTime, currentTime, videoRef, fps, ptsData, onFrameChange]);
 
   // Add/remove mouse event listeners for dragging
   useEffect(() => {
@@ -724,7 +742,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
   }, []);
 
 
-  const totalFrames = fps && duration ? Math.floor(duration * fps) : 0;
+  const totalFrames = ptsData ? ptsData.length : (fps && duration ? Math.floor(duration * fps) : 0);
 
   return (
     <div className="h-full flex flex-col">
@@ -828,7 +846,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
             <div className="flex items-center space-x-2">
               <span className="text-muted-foreground">Frame:</span>
               <span className="text-foreground font-mono" data-testid="text-current-frame">
-                {fps ? Math.floor(currentTime * fps + 0.001) : 0}
+                {fps ? calculateFrameFromTime(currentTime, fps, ptsData) : 0}
               </span>
               <span className="text-muted-foreground">/</span>
               <span className="text-muted-foreground font-mono" data-testid="text-total-frames">

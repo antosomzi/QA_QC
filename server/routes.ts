@@ -7,7 +7,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
-import { getVideoMetadata } from "./video-utils";
+import { getVideoMetadata, extractPtsData } from "./video-utils";
 import { createSessionMiddleware, createAuthRoutes, requireAuth } from "./auth";
 import { buildS3Key, uploadVideoToS3, getPresignedVideoUrl, deleteVideoFromS3, videoExistsInS3, s3Config } from "./s3-service";
 
@@ -294,6 +294,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Extract video metadata using ffprobe
       const videoFilePath = path.join('uploads', req.file.filename);
       let extractedMetadata = { fps: 30, duration: 0, width: 0, height: 0 };
+      let ptsData: number[] | null = null;
       try {
         extractedMetadata = await getVideoMetadata(videoFilePath);
         console.log(`[upload-video] Extracted metadata: fps=${extractedMetadata.fps}, duration=${extractedMetadata.duration}`);
@@ -307,6 +308,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
       }
 
+      // Extract per-frame PTS for VFR-safe frame navigation
+      try {
+        ptsData = await extractPtsData(videoFilePath);
+        console.log(`[upload-video] Extracted ${ptsData.length} PTS values`);
+      } catch (ptsError) {
+        console.warn(`[upload-video] Failed to extract PTS data (VFR navigation will fall back to CFR):`, ptsError);
+      }
+
       // Create video record
       const videoData = {
         filename: req.file.filename,
@@ -315,6 +324,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fps: extractedMetadata.fps,
         width: extractedMetadata.width,
         height: extractedMetadata.height,
+        ptsData: ptsData,
         folderId: folder.id,
       };
 
@@ -363,6 +373,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Extract video metadata using ffprobe for accurate FPS
       const videoFilePath = path.join('uploads', req.file.filename);
       let extractedMetadata = { fps: 30, duration: 0, width: 0, height: 0 };
+      let ptsData: number[] | null = null;
       try {
         extractedMetadata = await getVideoMetadata(videoFilePath);
         console.log(`[upload] Extracted metadata from video: fps=${extractedMetadata.fps}, duration=${extractedMetadata.duration}`);
@@ -377,6 +388,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
       }
 
+      // Extract per-frame PTS for VFR-safe frame navigation
+      try {
+        ptsData = await extractPtsData(videoFilePath);
+        console.log(`[upload] Extracted ${ptsData.length} PTS values`);
+      } catch (ptsError) {
+        console.warn(`[upload] Failed to extract PTS data (VFR navigation will fall back to CFR):`, ptsError);
+      }
+
       const videoData = {
         filename: req.file.filename,
         originalName: req.file.originalname,
@@ -384,6 +403,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fps: extractedMetadata.fps,
         width: extractedMetadata.width,
         height: extractedMetadata.height,
+        ptsData: ptsData,
         folderId: req.params.folderId,
       };
 
@@ -475,6 +495,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.sendFile(path.resolve(filePath));
     } catch (error) {
       res.status(500).json({ message: "Failed to serve video file" });
+    }
+  });
+
+  // Serve PTS (presentation timestamps) data for VFR-safe frame navigation
+  app.get("/api/videos/:id/pts", async (req, res) => {
+    try {
+      const video = await storage.getVideo(req.params.id);
+      if (!video) {
+        return res.status(404).json({ message: "Video not found" });
+      }
+      // ptsData is a JSONB column — may be null for older videos uploaded before this feature
+      res.json({ ptsData: video.ptsData ?? null });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch PTS data" });
     }
   });
 
