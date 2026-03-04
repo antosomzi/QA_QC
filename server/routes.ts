@@ -739,15 +739,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const filename = folder.name.replace(/\s+/g, '_');
       
       // CSV header matching signs.csv format + Longitude, Latitude columns
-      const csvHeader = "ID,Foreign Key,MUTCD Code,Position on the Support,Height (in),Width (in),Text,Longitude,Latitude";
+      const csvHeader = "ID,MUTCD Code,Position on the Support,Height (in),Width (in),Longitude,Latitude";
       
       // Generate CSV rows from annotations
       // Each annotation becomes one row (signType = MUTCD Code, gpsLon/gpsLat for position)
       const csvRows = annotationsWithBboxes.map((annotation, index) => {
         // ID: sequential index
         const id = index;
-        // Foreign Key: use annotation ID (first 8 chars of UUID for readability)
-        const foreignKey = annotation.id.substring(0, 8);
         // MUTCD Code: use signType
         const mutcdCode = annotation.signType || '';
         // Position on the Support: default to 1
@@ -756,13 +754,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const firstBbox = annotation.boundingBoxes.length > 0 ? annotation.boundingBoxes[0] : null;
         const height = firstBbox ? firstBbox.bboxHeight : 0;
         const width = firstBbox ? firstBbox.bboxWidth : 0;
-        // Text: empty for now
-        const text = '';
         // Longitude and Latitude from annotation GPS
         const longitude = annotation.gpsLon;
         const latitude = annotation.gpsLat;
 
-        return `${id},${foreignKey},${mutcdCode},${positionOnSupport},${height},${width},${text},${longitude},${latitude}`;
+        return `${id},${mutcdCode},${positionOnSupport},${height},${width},${longitude},${latitude}`;
       });
       
       const csvContent = [csvHeader, ...csvRows].join('\n');
