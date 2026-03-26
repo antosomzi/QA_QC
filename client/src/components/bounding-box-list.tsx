@@ -1,5 +1,5 @@
 import { Card } from "@/components/ui/card";
-import { AlertTriangle, Edit, Trash2, Triangle } from "lucide-react";
+import { AlertTriangle, Edit, Trash2, Triangle, Search } from "lucide-react";
 import type { Annotation, BoundingBox } from "@shared/schema";
 import { getLowConfidenceIssue } from "./helpers/video-player-helpers";
 import { getSignTypeById } from "@/data/sign-types";
@@ -9,14 +9,18 @@ import React, { useState } from "react";
 
 interface BoundingBoxListProps {
   annotation: Annotation | null;
+  boundingBoxes: BoundingBox[];
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void;
   onAnnotationDelete: (id: string) => void;
+  onCheckSign?: (annotation: Annotation) => void;
 }
 
 export default function BoundingBoxList({
   annotation,
+  boundingBoxes,
   onAnnotationUpdate,
   onAnnotationDelete,
+  onCheckSign,
 }: BoundingBoxListProps) {
   if (!annotation) {
     return (
@@ -113,6 +117,15 @@ export default function BoundingBoxList({
 
           </div>
         </Card>
+
+        {/* Check Sign Button */}
+        <Button
+          className="w-full h-10 text-lg font-semibold bg-green-600 hover:bg-green-700 text-white"
+          onClick={() => onCheckSign?.(annotation)}
+        >
+          <Search className="w-6 h-6 mr-2" />
+          Check Sign
+        </Button>
       </div>
            {/* Edit modal rendered outside the list to avoid event bubbling issues */}
             {isModalOpen && (

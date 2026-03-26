@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback, useMemo, forwardRef, useImperativeHandle } from "react";
 import { Button } from "@/components/ui/button";
-import { Play, Pause, SkipBack, SkipForward, X } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, X, Maximize, Minimize } from "lucide-react";
 import { getGPSForFrame } from "@/lib/gps-utils";
 import { 
   getCanvasCoordinates, 
@@ -113,6 +113,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
   const [isDraggingProgress, setIsDraggingProgress] = useState(false);
   const [previewTime, setPreviewTime] = useState<number | null>(null);
   const dragTimeoutRef = useRef<number | null>(null);
+  const wasPlayingBeforeDragRef = useRef<boolean>(false);
+
+  // State for fullscreen
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // REF MIRROR: Always contains the freshest data for immediate access in rVFC loop
   // This avoids "stale closure" issues where the draw function reads old state
@@ -323,6 +327,55 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
     }
   }, [isPlaying]);
 
+  const toggleFullscreen = useCallback(() => {
+    if (!containerRef.current) return;
+
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen().catch((err) => {
+        // Ignorer les erreurs de plein écran
+      });
+    } else {
+      document.exitFullscreen().catch(() => {
+        // Ignorer silencieusement les erreurs de timing (déjà en train de quitter)
+      });
+    }
+  }, []);
+
+  // Listen for fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      // Utiliser requestAnimationFrame pour éviter les erreurs de mise à jour d'état
+      requestAnimationFrame(() => {
+        setIsFullscreen(!!document.fullscreenElement);
+      });
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []);
+
+  // Listen for spacebar to toggle play/pause
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if typing in an input field
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if (e.code === 'Space') {
+        e.preventDefault(); // Prevent page scroll
+        togglePlayPause();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [togglePlayPause]);
+
   const cyclePlaybackRate = useCallback(() => {
     if (!videoRef.current) return;
 
@@ -393,19 +446,23 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
   const handleProgressMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDraggingProgress(true);
-    
-    // Pause video while dragging for smoother experience
-    if (videoRef.current && !videoRef.current.paused) {
-      videoRef.current.pause();
+
+    // Save current play state
+    if (videoRef.current) {
+      wasPlayingBeforeDragRef.current = !videoRef.current.paused;
+      // Pause video while dragging for smoother experience
+      if (!videoRef.current.paused) {
+        videoRef.current.pause();
+      }
     }
-    
+
     // Calculate initial preview time
     if (!duration) return;
-    
+
     const rect = e.currentTarget.getBoundingClientRect();
     const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const targetTime = pos * duration;
-    
+
     // Update visual preview immediately
     setPreviewTime(targetTime);
   }, [duration, videoRef]);
@@ -438,22 +495,27 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
 
   const handleProgressMouseUp = useCallback(() => {
     if (!isDraggingProgress) return;
-    
+
     // Clear any pending timeout
     if (dragTimeoutRef.current !== null) {
       window.clearTimeout(dragTimeoutRef.current);
     }
-    
+
     // Final seek to exact position
     const finalTime = previewTime ?? currentTime;
     if (videoRef.current) {
       videoRef.current.currentTime = finalTime;
       setCurrentTime(finalTime);
+      
+      // Restore play state if video was playing before drag
+      if (wasPlayingBeforeDragRef.current) {
+        videoRef.current.play();
+      }
     }
-    
+
     setIsDraggingProgress(false);
     setPreviewTime(null);
-    
+
     // Sync frame state after dragging ends
     if (videoRef.current && fps) {
       const targetFrame = calculateFrameFromTime(finalTime, fps, ptsData);
@@ -747,13 +809,15 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
   return (
     <div className="h-full flex flex-col">
       <div className="bg-card rounded-lg p-4 h-full flex flex-col">
-        <div 
+        {/* === LE CONTENEUR QUI PASSE EN PLEIN ÉCRAN === */}
+        <div
           ref={containerRef}
           className="relative w-full flex-1 bg-black rounded-md overflow-hidden"
         >
+          {/* Vidéo */}
           <video
             ref={videoRef}
-            className="w-full h-full object-contain rounded-md"
+            className="absolute inset-0 w-full h-full object-contain"
             src={`/api/videos/${video.id}/file`}
             onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={handleLoadedMetadata}
@@ -761,119 +825,137 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
             onPause={() => setIsPlaying(false)}
             data-testid="video-player"
           />
-          
+
+          {/* Canvas - doit être au-dessus de la vidéo */}
           <canvas
             ref={canvasRef}
-            className="absolute top-0 left-0 w-full h-full cursor-crosshair"
+            className="absolute inset-0 w-full h-full cursor-crosshair z-10"
             width={video.width || 1920}
             height={video.height || 1080}
             onMouseDown={handleCanvasMouseDown}
             onMouseMove={handleCanvasMouseMove}
             onMouseUp={handleCanvasMouseUp}
+            onClick={togglePlayPause}
+            onDoubleClick={toggleFullscreen}
             data-testid="annotation-canvas"
           />
-          
-          {/* Delete video button - top right corner */}
+
+          {/* Bouton Delete - z-50 pour être au-dessus du canvas */}
           <Button
             onClick={onVideoDelete}
             variant="ghost"
             size="sm"
-            className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-600/90 text-white rounded-md transition-colors z-10"
+            className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-600/90 text-white rounded-md transition-colors z-50"
             title="Remove video"
             data-testid="button-delete-video"
           >
             <X className="w-5 h-5" />
           </Button>
-        </div>
-        
-        {/* Video Controls */}
-        <div className="mt-4 space-y-3 flex-shrink-0">
-          <div className="flex items-center space-x-4">
-            <Button
-              onClick={togglePlayPause}
-              size="sm"
-              className="p-2"
-              data-testid="button-play-pause"
-            >
-              {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-            </Button>
-            <Button
-              onClick={cyclePlaybackRate}
-              size="sm"
-              className="px-3"
-              variant="outline"
-              data-testid="button-playback-rate"
-            >
-              {playbackRate}x
-            </Button>
-            <span className="text-sm text-muted-foreground" data-testid="text-current-time">
-              {formatTime(isDraggingProgress && previewTime !== null ? previewTime : currentTime)}
-            </span>
-            <div 
-              data-progress-bar
-              className="flex-1 h-2 bg-muted rounded-full relative cursor-pointer select-none group"
-              onMouseDown={handleProgressMouseDown}
-            >
-              {/* Progress bar fill */}
-              <div 
-                className="absolute top-0 left-0 h-full bg-primary rounded-full pointer-events-none" 
-                style={{ 
-                  width: `${duration ? ((isDraggingProgress && previewTime !== null ? previewTime : currentTime) / duration) * 100 : 0}%`,
-                  transition: isDraggingProgress ? 'none' : 'width 0.1s ease-out'
-                }}
-                data-testid="progress-bar"
-              />
-              
-              {/* Draggable thumb (round handle) */}
-              <div 
-                className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full shadow-lg pointer-events-none ${
-                  isDraggingProgress ? 'scale-125' : 'scale-0 group-hover:scale-100'
-                }`}
-                style={{ 
-                  left: `${duration ? ((isDraggingProgress && previewTime !== null ? previewTime : currentTime) / duration) * 100 : 0}%`, 
-                  marginLeft: '-8px',
-                  transition: isDraggingProgress ? 'none' : 'transform 0.2s ease-out'
-                }}
-              />
-            </div>
-            <span className="text-sm text-muted-foreground" data-testid="text-total-time">
-              {formatTime(duration)}
-            </span>
-          </div>
-          
-          {/* Frame Navigation */}
-          <div className="flex items-center justify-between text-sm">
-            <div className="flex items-center space-x-2">
-              <span className="text-muted-foreground">Frame:</span>
-              <span className="text-foreground font-mono" data-testid="text-current-frame">
-                {fps ? calculateFrameFromTime(currentTime, fps, ptsData) : 0}
-              </span>
-              <span className="text-muted-foreground">/</span>
-              <span className="text-muted-foreground font-mono" data-testid="text-total-frames">
-                {totalFrames}
-              </span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Button 
-                onClick={goToPreviousFrame} 
-                size="sm" 
-                variant="secondary"
-                disabled={fps ? getActualFrame() <= 0 : true}
-                data-testid="button-previous-frame"
-              >
-                <SkipBack className="w-4 h-4 mr-1" />
-                Frame
-              </Button>
-              <Button 
-                onClick={goToNextFrame} 
-                size="sm" 
-                variant="secondary"
-                disabled={fps && duration ? getActualFrame() >= totalFrames - 1 : true}
-                data-testid="button-next-frame"
-              >
-                Frame
-                <SkipForward className="w-4 h-4 ml-1" />
-              </Button>
+
+          {/* Bouton Fullscreen - z-50 pour être au-dessus du canvas */}
+          <Button
+            onClick={toggleFullscreen}
+            variant="ghost"
+            size="sm"
+            className="absolute top-2 right-12 p-1.5 bg-black/50 hover:bg-black/70 text-white rounded-md transition-colors z-50"
+            title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+          >
+            {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+          </Button>
+
+          {/* === CONTRÔLES VIDÉO - Overlay absolu en bas === */}
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-black/50 p-4 z-50">
+            <div className="space-y-3">
+              {/* Contrôles principaux */}
+              <div className="flex items-center space-x-4">
+                <Button
+                  onClick={togglePlayPause}
+                  size="sm"
+                  className="p-2 bg-white/20 hover:bg-white/30 text-white border-0"
+                  data-testid="button-play-pause"
+                >
+                  {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                </Button>
+                <Button
+                  onClick={cyclePlaybackRate}
+                  size="sm"
+                  className="px-3 bg-white/20 hover:bg-white/30 text-white border-0"
+                  data-testid="button-playback-rate"
+                >
+                  {playbackRate}x
+                </Button>
+                <span className="text-sm text-white font-mono" data-testid="text-current-time">
+                  {formatTime(isDraggingProgress && previewTime !== null ? previewTime : currentTime)}
+                </span>
+
+                {/* Barre de progression */}
+                <div
+                  data-progress-bar
+                  className="flex-1 h-2 bg-white/30 rounded-full relative cursor-pointer select-none group"
+                  onMouseDown={handleProgressMouseDown}
+                >
+                  <div
+                    className="absolute top-0 left-0 h-full bg-primary rounded-full pointer-events-none"
+                    style={{
+                      width: `${duration ? ((isDraggingProgress && previewTime !== null ? previewTime : currentTime) / duration) * 100 : 0}%`,
+                      transition: isDraggingProgress ? 'none' : 'width 0.1s ease-out'
+                    }}
+                    data-testid="progress-bar"
+                  />
+                  <div
+                    className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full shadow-lg pointer-events-none ${
+                      isDraggingProgress ? 'scale-125' : 'scale-0 group-hover:scale-100'
+                    }`}
+                    style={{
+                      left: `${duration ? ((isDraggingProgress && previewTime !== null ? previewTime : currentTime) / duration) * 100 : 0}%`,
+                      marginLeft: '-8px',
+                      transition: isDraggingProgress ? 'none' : 'transform 0.2s ease-out'
+                    }}
+                  />
+                </div>
+
+                <span className="text-sm text-white font-mono" data-testid="text-total-time">
+                  {formatTime(duration)}
+                </span>
+              </div>
+
+              {/* Navigation des frames */}
+              <div className="flex items-center justify-between text-sm">
+                <div className="flex items-center space-x-2">
+                  <span className="text-white/80">Frame:</span>
+                  <span className="text-white font-mono" data-testid="text-current-frame">
+                    {fps ? calculateFrameFromTime(currentTime, fps, ptsData) : 0}
+                  </span>
+                  <span className="text-white/80">/</span>
+                  <span className="text-white/80 font-mono" data-testid="text-total-frames">
+                    {totalFrames}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    onClick={goToPreviousFrame}
+                    size="sm"
+                    variant="ghost"
+                    className="text-white hover:text-white hover:bg-white/20 border-0"
+                    disabled={fps ? getActualFrame() <= 0 : true}
+                    data-testid="button-previous-frame"
+                  >
+                    <SkipBack className="w-4 h-4 mr-1" />
+                    Frame
+                  </Button>
+                  <Button
+                    onClick={goToNextFrame}
+                    size="sm"
+                    variant="ghost"
+                    className="text-white hover:text-white hover:bg-white/20 border-0"
+                    disabled={fps && duration ? getActualFrame() >= totalFrames - 1 : true}
+                    data-testid="button-next-frame"
+                  >
+                    Frame
+                    <SkipForward className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

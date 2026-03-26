@@ -656,8 +656,13 @@ export default function AnnotationTool() {
                   <div className="h-[19vh] border-t border-border bg-card flex-shrink-0">
                     <BoundingBoxList
                       annotation={selectedAnnotation ?? null}
+                      boundingBoxes={boundingBoxes}
                       onAnnotationUpdate={handleAnnotationUpdate}
                       onAnnotationDelete={handleAnnotationDelete}
+                      onCheckSign={(annotation) => {
+                        console.log("Check sign:", annotation);
+                        // TODO: Implement check sign logic
+                      }}
                     />
                   </div>
                 )}
