@@ -321,6 +321,7 @@ export function calculateResizedBbox(
 
 /**
  * Sets appropriate cursor style based on bounding box handle type
+ * Now uses a single pointer cursor for all bounding box interactions (selection only)
  */
 export function setCursorForHandle(canvas: HTMLCanvasElement, handle: string | null): void {
   if (!handle) {
@@ -328,29 +329,8 @@ export function setCursorForHandle(canvas: HTMLCanvasElement, handle: string | n
     return;
   }
 
-  switch (handle) {
-    case 'nw':
-    case 'se':
-      canvas.style.cursor = 'nwse-resize';
-      break;
-    case 'ne':
-    case 'sw':
-      canvas.style.cursor = 'nesw-resize';
-      break;
-    case 'n':
-    case 's':
-      canvas.style.cursor = 'ns-resize';
-      break;
-    case 'w':
-    case 'e':
-      canvas.style.cursor = 'ew-resize';
-      break;
-    case 'move':
-      canvas.style.cursor = 'move';
-      break;
-    default:
-      canvas.style.cursor = 'crosshair';
-  }
+  // Use pointer cursor for all bounding box interactions (selection only)
+  canvas.style.cursor = 'pointer';
 }
 
 /**

@@ -114,6 +114,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
   const [previewTime, setPreviewTime] = useState<number | null>(null);
   const dragTimeoutRef = useRef<number | null>(null);
   const wasPlayingBeforeDragRef = useRef<boolean>(false);
+  const clickedOnBboxRef = useRef<boolean>(false);
 
   // State for fullscreen
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -539,35 +540,42 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
   const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
     const coords = getCanvasCoordinatesLocal(e);
     const actualFrame = getActualFrame();
-    
+
+    // Reset bbox click flag
+    clickedOnBboxRef.current = false;
+
     // Check if we're clicking on a bounding box handle
     const result = findBoundingBoxAt(coords.x, coords.y, boundingBoxes, actualFrame, 10);
-    
+
     if (result) {
       const { boundingBox, handle } = result;
-      
+
+      // Mark that we clicked on a bbox
+      clickedOnBboxRef.current = true;
+
       // Select the annotation associated with this bounding box
       const annotation = annotations.find(ann => ann.id === boundingBox.annotationId);
       if (annotation) {
         onAnnotationSelect(annotation.id);
-        setSelectedBoundingBox(boundingBox);
-        setInitialBoundingBox({ ...boundingBox }); // Store initial state
-        
-        if (handle === 'move') {
-          // Start moving
-          setIsMoving(true);
-          setMoveStart(coords);
-        } else {
-          // Start resizing
-          setIsResizing(true);
-          setResizeHandle(handle);
-        }
-        
+        // DISABLED: Moving and resizing bounding boxes from video
+        // setSelectedBoundingBox(boundingBox);
+        // setInitialBoundingBox({ ...boundingBox });
+
+        // if (handle === 'move') {
+        //   // Start moving
+        //   setIsMoving(true);
+        //   setMoveStart(coords);
+        // } else {
+        //   // Start resizing
+        //   setIsResizing(true);
+        //   setResizeHandle(handle);
+        // }
+
         // Prevent drawing when interacting with existing bounding boxes
         return;
       }
     }
-    
+
     // If we clicked on empty space, only start drawing if GPS data is available
     if (gpsData) {
       // Start drawing a new bounding box
@@ -576,6 +584,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
       setCurrentBBox(null);
     }
   }, [gpsData, getCanvasCoordinatesLocal, boundingBoxes, annotations, onAnnotationSelect, getActualFrame]);
+
+  const handleCanvasClick = useCallback(() => {
+    // Only toggle play/pause if we didn't click on a bounding box
+    if (!clickedOnBboxRef.current) {
+      togglePlayPause();
+    }
+  }, [togglePlayPause]);
 
   const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
     const coords = getCanvasCoordinatesLocal(e);
@@ -835,7 +850,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
             onMouseDown={handleCanvasMouseDown}
             onMouseMove={handleCanvasMouseMove}
             onMouseUp={handleCanvasMouseUp}
-            onClick={togglePlayPause}
+            onClick={handleCanvasClick}
             onDoubleClick={toggleFullscreen}
             data-testid="annotation-canvas"
           />
