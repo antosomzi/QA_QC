@@ -557,10 +557,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
       const annotation = annotations.find(ann => ann.id === boundingBox.annotationId);
       if (annotation) {
         onAnnotationSelect(annotation.id);
-        // DISABLED: Moving and resizing bounding boxes from video
-        // setSelectedBoundingBox(boundingBox);
-        // setInitialBoundingBox({ ...boundingBox });
+        setSelectedBoundingBox(boundingBox);
+        setInitialBoundingBox({ ...boundingBox });
 
+        // DISABLED: Moving and resizing bounding boxes from video
         // if (handle === 'move') {
         //   // Start moving
         //   setIsMoving(true);
@@ -733,11 +733,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
     
     // If we're here, it means we clicked without any interaction
     // Check if we clicked on empty space to deselect
-    if (!isMoving && !isResizing) {
+    if (!isMoving && !isResizing && !clickedOnBboxRef.current) {
       // Simple click on empty space - deselect
       onAnnotationSelect(null);
     }
-    
+
     // Reset states
     setIsDrawing(false);
     setIsMoving(false);
