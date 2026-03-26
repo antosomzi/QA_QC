@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SIGN_TYPES, type SignType } from "@/data/sign-types";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 
 interface SignTypeSelectorProps {
   value?: string;
@@ -130,22 +131,40 @@ export default function SignTypeSelector({
         >
           <div className="max-h-[300px] overflow-y-auto">
             {displayedSigns.map((sign) => (
-              <div
-                key={sign.id}
-                className={cn(
-                  "flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-accent transition-colors",
-                  value === sign.id && "bg-accent"
-                )}
-                onMouseDown={(e) => {
-                  e.preventDefault(); // Empêche le blur de l'input
-                  handleSelect(sign.id);
-                }}
-              >
-                <span className="text-sm">{sign.name}</span>
-                {value === sign.id && (
-                  <Check className="h-4 w-4 text-green-600" />
-                )}
-              </div>
+              <HoverCard key={sign.id} openDelay={500} closeDelay={200}>
+                <HoverCardTrigger asChild>
+                  <div
+                    className={cn(
+                      "flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-accent transition-colors",
+                      value === sign.id && "bg-accent"
+                    )}
+                    onMouseDown={(e) => {
+                      e.preventDefault(); // Empêche le blur de l'input
+                      handleSelect(sign.id);
+                    }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={sign.imagePath}
+                        alt={sign.name}
+                        className="w-8 h-8 object-contain flex-shrink-0"
+                        loading="lazy"
+                      />
+                      <span className="text-sm">{sign.name}</span>
+                    </div>
+                    {value === sign.id && (
+                      <Check className="h-4 w-4 text-green-600" />
+                    )}
+                  </div>
+                </HoverCardTrigger>
+                <HoverCardContent side="right" className="w-auto p-2">
+                  <img
+                    src={sign.imagePath}
+                    alt={sign.name}
+                    className="w-18 h-18 object-contain"
+                  />
+                </HoverCardContent>
+              </HoverCard>
             ))}
 
             {/* Show more results indicator */}

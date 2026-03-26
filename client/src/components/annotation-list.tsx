@@ -142,7 +142,6 @@ export default function AnnotationList({
         {annotations.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <p>No annotations yet</p>
-            <p className="text-xs mt-1">Draw bounding boxes on the video to create annotations</p>
           </div>
         ) : (
           sortedAnnotations.map((annotation) => {

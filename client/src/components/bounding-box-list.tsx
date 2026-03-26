@@ -1,45 +1,23 @@
-import { useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Dialog, DialogTrigger } from "@/components/ui/dialog";
-import { AlertTriangle } from "lucide-react";
-import { formatTime } from "./helpers/video-player-helpers";
-import { Trash2, Edit } from "lucide-react";
-import type { BoundingBox, Annotation } from "@shared/schema";
-import EditAnnotationModal from "./edit-annotation-modal";
+import { AlertTriangle, Edit, Trash2, Triangle } from "lucide-react";
+import type { Annotation, BoundingBox } from "@shared/schema";
 import { getLowConfidenceIssue } from "./helpers/video-player-helpers";
+import { getSignTypeById } from "@/data/sign-types";
+import { Button } from "./ui/button";
+import EditAnnotationModal from "./edit-annotation-modal";
+import React, { useState } from "react";
 
 interface BoundingBoxListProps {
   annotation: Annotation | null;
-  boundingBoxes: BoundingBox[];
-  currentFrame: number;
-  videoFps?: number;
-  onFrameNavigate: (frame: number) => void;
-  onBoundingBoxDelete?: (id: string) => void;
-  onAnnotationUpdate?: (id: string, updates: Partial<Annotation>) => void;
+  onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void;
+  onAnnotationDelete: (id: string) => void;
 }
 
 export default function BoundingBoxList({
   annotation,
-  boundingBoxes,
-  currentFrame,
-  videoFps = 30,
-  onFrameNavigate,
-  onBoundingBoxDelete,
   onAnnotationUpdate,
+  onAnnotationDelete,
 }: BoundingBoxListProps) {
-  const [editingAnnotation, setEditingAnnotation] = useState<Annotation | null>(null);
-
-  // Filter bounding boxes for the selected annotation and sort by frame
-  const annotationBoundingBoxes = useMemo(() => {
-    if (!annotation) return [];
-    
-    return boundingBoxes
-      .filter(bbox => bbox.annotationId === annotation.id)
-      .sort((a, b) => a.frameIndex - b.frameIndex);
-  }, [annotation, boundingBoxes]);
-
   if (!annotation) {
     return (
       <div className="p-4 text-center text-muted-foreground">
@@ -47,146 +25,106 @@ export default function BoundingBoxList({
       </div>
     );
   }
-
-  if (annotationBoundingBoxes.length === 0) {
-    return (
-      <div className="p-4 text-center text-muted-foreground">
-        <p className="text-sm">No bounding boxes for "{annotation.signType}"</p>
-        <p className="text-xs mt-1">Draw a bounding box on the video to add one</p>
-      </div>
-    );
-  }
+  const signType = annotation.signType ? getSignTypeById(annotation.signType) : null;
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   return (
     <div className="p-4 h-full flex flex-col">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-medium text-foreground">
-          Bounding Boxes for "{annotation.signType}"
-        </h3>
-        <div className="flex items-center space-x-2">
-          <Badge variant="secondary" className="text-xs">
-            {annotationBoundingBoxes.length} box{annotationBoundingBoxes.length !== 1 ? 'es' : ''}
-          </Badge>
-          {onAnnotationUpdate && (
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setEditingAnnotation(annotation)}
-                  className="h-7 w-7 p-0"
-                  title="Edit annotation"
-                >
-                  <Edit className="w-3 h-3" />
-                </Button>
-              </DialogTrigger>
-              {editingAnnotation && (
-                <EditAnnotationModal
-                  annotation={editingAnnotation}
-                  onSave={(updates) => {
-                    if (onAnnotationUpdate) {
-                      onAnnotationUpdate(editingAnnotation.id, updates);
-                    }
-                  }}
-                  onClose={() => setEditingAnnotation(null)}
+      <div className="flex-1 overflow-y-auto space-y-4">
+        {/* Panel sign type with icon */}
+        <Card className="p-2 bg-card border-border">
+          <div className="flex items-center justify-between gap-4">
+            {/* Sign type */}
+            <div className="flex items-center gap-4">
+              {signType && (
+                <img
+                  src={signType.imagePath}
+                  alt={signType.name}
+                  className="w-16 h-16 object-contain flex-shrink-0"
+                  loading="lazy"
                 />
               )}
-            </Dialog>
-          )}
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto space-y-2">
-        {/* Low confidence warning banner - inside scrollable container */}
-        {(() => {
-          const lowConfidence = getLowConfidenceIssue(annotation);
-          if (!lowConfidence.isLowConfidence) return null;
-
-          // Determine the title based on which confidence is low
-          let title = "Low confidence";
-          if (lowConfidence.lowClassification && lowConfidence.lowDetection) {
-            title = "Low confidence: detection & classification";
-          } else if (lowConfidence.lowClassification) {
-            title = "Low confidence: classification";
-          } else if (lowConfidence.lowDetection) {
-            title = "Low confidence: detection";
-          }
-
-          return (
-            <Card className="p-3 bg-red-50 border border-red-200">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                <div className="text-sm">
-                  <p className="font-medium text-red-800">{title}</p>
-                  <p className="text-red-500 text-xs mt-1">
-                    {lowConfidence.lowClassification && `Classification: ${(annotation.classificationConfidence! * 100).toFixed(0)}%`}
-                    {lowConfidence.lowClassification && lowConfidence.lowDetection && ` • `}
-                    {lowConfidence.lowDetection && `Detection: ${(annotation.detectionConfidence! * 100).toFixed(0)}%`}
-                  </p>
-                </div>
+              <div>
+                <p className="text-2xl font-bold text-foreground">{annotation.signType}</p>
               </div>
-            </Card>
-          );
-        })()}
-
-        {annotationBoundingBoxes.map((bbox) => {
-          const isCurrentFrame = bbox.frameIndex === currentFrame;
-          const timeInSeconds = bbox.frameTimestampMs / 1000;
+            </div>
           
-          return (
-            <Card
-              key={bbox.id}
-              className={`p-3 transition-colors cursor-pointer ${
-                isCurrentFrame 
-                  ? 'bg-primary/10 border-primary' 
-                  : 'bg-card hover:bg-muted/50'
-              }`}
-              onClick={() => {
-                // Navigate to frame only
-                onFrameNavigate(bbox.frameIndex);
+            {/* Low confidence alert */}
+            {(() => {
+              const lowConfidence = getLowConfidenceIssue(annotation);
+              if (!lowConfidence.isLowConfidence) return null;
+
+              let title = "Low confidence";
+              if (lowConfidence.lowClassification && lowConfidence.lowDetection) {
+                title = "Low confidence: detection & classification";
+              } else if (lowConfidence.lowClassification) {
+                title = "Low confidence: classification";
+              } else if (lowConfidence.lowDetection) {
+                title = "Low confidence: detection";
+              }
+
+              return (
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="w-8 h-8 text-red-500 flex-shrink-0" />
+                  <div className="text-sm">
+                    <p className="font-medium text-red-800">{title}</p>
+                    <p className="text-red-500 text-xs mt-1">
+                      {lowConfidence.lowClassification && `Classification: ${(annotation.classificationConfidence! * 100).toFixed(0)}%`}
+                      {lowConfidence.lowClassification && lowConfidence.lowDetection && ` • `}
+                      {lowConfidence.lowDetection && `Detection: ${(annotation.detectionConfidence! * 100).toFixed(0)}%`}
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
+
+          <div className="flex items-center space-x-1">
+            {/* Bouton Edit */}
+            <Button
+              variant="ghost"
+              // Ajout de [&_svg]:size-8 pour forcer la taille du SVG interne à 32px
+              className="p-1 w-12 h-12 flex items-center justify-center text-muted-foreground hover:text-foreground [&_svg]:size-6"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsModalOpen(true);
               }}
+              data-testid={`button-edit-annotation-${annotation.id}`}
             >
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center space-x-2 mb-1">
-                    <Badge 
-                      variant={isCurrentFrame ? "default" : "outline"} 
-                      className="text-xs font-mono"
-                    >
-                      Frame {bbox.frameIndex}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {formatTime(timeInSeconds)}
-                    </span>
-                  </div>
-                  
-                  <div className="text-xs text-muted-foreground">
-                    Position: {bbox.bboxX}, {bbox.bboxY} • 
-                    Size: {bbox.bboxWidth}×{bbox.bboxHeight}
-                  </div>
-                </div>
-                
-                <div className="flex items-center space-x-1 ml-2">
-                  {onBoundingBoxDelete && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onBoundingBoxDelete(bbox.id);
-                      }}
-                      className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                      title="Delete bounding box"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </Card>
-          );
-        })}
+              {/* Vous pouvez garder le className ici par précaution, ou utiliser size={32} */}
+              <Edit className="w-6 h-6" />
+            </Button>
+
+            {/* Bouton Delete */}
+            <Button
+              variant="ghost"
+              // Suppression de size="sm" et ajout de w-12 h-12 pour harmoniser la taille du bouton
+              // Ajout de [&_svg]:size-6 pour forcer la taille du SVG interne à 24px
+              className="p-1 w-12 h-12 flex items-center justify-center text-muted-foreground hover:text-destructive [&_svg]:size-6"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAnnotationDelete(annotation.id);
+              }}
+              data-testid={`button-delete-annotation-${annotation.id}`}
+            >
+              <Trash2 className="w-6 h-6" />
+            </Button>
+          </div>
+
+          </div>
+        </Card>
       </div>
+           {/* Edit modal rendered outside the list to avoid event bubbling issues */}
+            {isModalOpen && (
+              <EditAnnotationModal
+                annotation={annotation}
+                onSave={(updates) => {
+                  onAnnotationUpdate(annotation.id, updates);
+                  setIsModalOpen(false);
+                }}
+                onClose={() => setIsModalOpen(false)}
+              />
+            )}
     </div>
   );
 }

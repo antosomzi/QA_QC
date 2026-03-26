@@ -256,14 +256,18 @@ export default function AnnotationTool() {
   }, [folderId, toast, queryClient]);
 
   const handleBoundingBoxDelete = useCallback(async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this bounding box? This action cannot be undone.")) {
+      return;
+    }
+
     try {
       await apiRequest("DELETE", `/api/bounding-boxes/${id}`);
-      
+
       // Invalidate the query to trigger automatic refetch
-      queryClient.invalidateQueries({ 
-        queryKey: ["folder-annotations-with-bboxes", folderId] 
+      queryClient.invalidateQueries({
+        queryKey: ["folder-annotations-with-bboxes", folderId]
       });
-      
+
       toast({
         title: "Bounding box deleted",
         description: "Bounding box has been removed.",
@@ -358,6 +362,10 @@ export default function AnnotationTool() {
   }, [folderId, refetchAnnotations, toast, queryClient]);
 
   const handleAnnotationDelete = useCallback(async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this annotation? This action cannot be undone.")) {
+      return;
+    }
+
     try {
       await apiRequest("DELETE", `/api/annotations/${id}`);
       refetchAnnotations();
@@ -648,12 +656,8 @@ export default function AnnotationTool() {
                   <div className="h-[19vh] border-t border-border bg-card flex-shrink-0">
                     <BoundingBoxList
                       annotation={selectedAnnotation ?? null}
-                      boundingBoxes={boundingBoxes}
-                      currentFrame={currentFrame}
-                      videoFps={selectedVideo.fps ?? undefined}
-                      onFrameNavigate={handleFrameNavigate}
-                      onBoundingBoxDelete={handleBoundingBoxDelete}
                       onAnnotationUpdate={handleAnnotationUpdate}
+                      onAnnotationDelete={handleAnnotationDelete}
                     />
                   </div>
                 )}
