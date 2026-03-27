@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Edit, Trash2, AlertTriangle } from "lucide-react";
+import { Edit, Trash2, AlertTriangle, Search } from "lucide-react";
 import type { Annotation, BoundingBox } from "@shared/schema";
 import { getAnnotationCSSColor, getAnnotationIndex, getAnnotationHexColor, getAnnotationColor, getLowConfidenceIssue } from "./helpers/video-player-helpers";
 import EditAnnotationModal from "./edit-annotation-modal";
@@ -29,7 +29,6 @@ export default function AnnotationList({
   // Scroll to the selected annotation when it changes
   useEffect(() => {
     if (selectedAnnotationRef.current && selectedAnnotationId) {
-      // Using requestAnimationFrame to ensure DOM is updated before scrolling
       requestAnimationFrame(() => {
         selectedAnnotationRef.current?.scrollIntoView({
           behavior: 'smooth',
@@ -39,18 +38,6 @@ export default function AnnotationList({
     }
   }, [selectedAnnotationId]);
 
-  const formatTimestamp = (timestampMs: number | null | undefined) => {
-    if (timestampMs === null || timestampMs === undefined) {
-      return 'No timestamp';
-    }
-
-    const totalSeconds = Math.floor(timestampMs / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    const centiseconds = Math.floor((timestampMs % 1000) / 10);
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${centiseconds.toString().padStart(2, '0')}`;
-  };
-
   const formatCoordinate = (coord: number, isLat: boolean) => {
     const abs = Math.abs(coord);
     const direction = isLat ? (coord >= 0 ? 'N' : 'S') : (coord >= 0 ? 'E' : 'W');
@@ -58,8 +45,6 @@ export default function AnnotationList({
   };
 
   const sortedAnnotations = useMemo(() => {
-      // 1. Pré-calcul : Créer un dictionnaire { annotationId: tempsDeDebut }
-      // On parcourt les boxes UNE SEULE FOIS.
       const startTimes = new Map<string, number>();
 
       for (const bbox of boundingBoxes) {
@@ -69,27 +54,35 @@ export default function AnnotationList({
         }
       }
 
-      // 2. Tri : On utilise le dictionnaire pour une lecture instantanée
       return [...annotations].sort((a, b) => {
         const aTime = startTimes.get(a.id) ?? Number.POSITIVE_INFINITY;
         const bTime = startTimes.get(b.id) ?? Number.POSITIVE_INFINITY;
 
-        // Si même temps, tri alphabétique par signType
         if (aTime === bTime) {
           return a.signType.localeCompare(b.signType);
         }
-
-        // Sinon tri chronologique
         return aTime - bTime;
       });
     }, [annotations, boundingBoxes]);
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between mb-4 flex-shrink-0">
-        <h3 className="text-lg font-medium">Signs</h3>
-        <div className="flex items-center space-x-2">
-          {/* Low confidence counts */}
+    // AJOUT: w-full pour qu'il s'adapte à son parent
+    <div className="h-full w-full flex flex-col">
+      
+      {/* MODIFICATION: flex-wrap et gap-3 pour permettre de passer à la ligne sur les petits panneaux */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <h3 className="text-lg font-medium">Signs</h3>
+          <Button
+            className="h-8 px-3 text-sm font-medium bg-green-600 hover:bg-green-700 text-white"
+            onClick={() => console.log("hello")}
+          >
+            Add New Signs
+          </Button>
+        </div>
+        
+        {/* MODIFICATION: flex-wrap ici aussi au cas où il y a beaucoup de compteurs */}
+        <div className="flex flex-wrap items-center gap-2">
           {(() => {
             const lowClassificationCount = annotations.filter(a => 
               a.classificationConfidence !== undefined && 
@@ -104,41 +97,24 @@ export default function AnnotationList({
             
             return (
               <>
-                <span
-                  className={`text-xs px-2 py-1 rounded font-medium ${
-                    lowClassificationCount > 0 
-                      ? 'bg-red-100 text-red-700' 
-                      : 'bg-muted text-muted-foreground'
-                  }`}
-                  title="Low classification confidence"
-                >
+                <span className={`text-xs px-2 py-1 rounded font-medium whitespace-nowrap ${lowClassificationCount > 0 ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'}`}>
                   ⚠️ Classif: {lowClassificationCount}
                 </span>
-                <span
-                  className={`text-xs px-2 py-1 rounded font-medium ${
-                    lowDetectionCount > 0 
-                      ? 'bg-red-100 text-red-700' 
-                      : 'bg-muted text-muted-foreground'
-                  }`}
-                  title="Low detection confidence"
-                >
+                <span className={`text-xs px-2 py-1 rounded font-medium whitespace-nowrap ${lowDetectionCount > 0 ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'}`}>
                   ⚠️ Local: {lowDetectionCount}
                 </span>
               </>
             );
           })()}
           
-          <span className="text-xs text-muted-foreground">Total:</span>
-          <span
-            className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded"
-            data-testid="text-annotation-count"
-          >
+          <span className="text-xs text-muted-foreground whitespace-nowrap">Total:</span>
+          <span className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded">
             {annotations.length}
           </span>
         </div>
       </div>
 
-      <div className="space-y-2 overflow-y-auto flex-1 min-h-0">
+      <div className="space-y-2 overflow-y-auto flex-1 min-h-0 pr-1">
         {annotations.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <p>No annotations yet</p>
@@ -160,17 +136,12 @@ export default function AnnotationList({
                     : 'bg-card border-border hover:bg-accent/50'
               }`}
               onClick={() => {
-                // Si l'annotation est déjà sélectionnée, la désélectionner
-                if (annotation.id === selectedAnnotationId) {
-                  onAnnotationSelect(null);
-                } else {
-                  onAnnotationSelect(annotation.id);
-                }
+                onAnnotationSelect(annotation.id === selectedAnnotationId ? null : annotation.id);
               }}
-              data-testid={`annotation-item-${annotation.id}`}
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
+              {/* MODIFICATION: gap-2 et min-w-0 pour empêcher le texte de pousser les boutons */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center space-x-3 min-w-0 flex-1">
                   {signType && (
                     <img
                       src={signType.imagePath}
@@ -183,49 +154,45 @@ export default function AnnotationList({
                     className="w-2 h-2 rounded-full flex-shrink-0"
                     style={{ backgroundColor: annotationColor }}
                   ></div>
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium" data-testid={`text-annotation-label-${annotation.id}`}>
+                      <p className="text-sm font-medium truncate">
                         {signType?.name ?? annotation.signType}
                       </p>
                       {lowConfidence.isLowConfidence && (
                         <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      GPS: {annotation.gpsLat.toFixed(5)}, {annotation.gpsLon.toFixed(5)}
-                    </p>
                   </div>
                 </div>
-                <div className="flex items-center space-x-1">
+                
+                <div className="flex items-center space-x-1 flex-shrink-0">
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="p-1 text-muted-foreground hover:text-foreground"
+                    className="p-1 h-7 w-7 text-muted-foreground hover:text-foreground"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       setEditingAnnotation(annotation);
                     }}
-                    data-testid={`button-edit-annotation-${annotation.id}`}
                   >
                     <Edit className="w-4 h-4" />
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="p-1 text-muted-foreground hover:text-destructive"
+                    className="p-1 h-7 w-7 text-muted-foreground hover:text-destructive"
                     onClick={(e) => {
                       e.stopPropagation();
                       onAnnotationDelete(annotation.id);
                     }}
-                    data-testid={`button-delete-annotation-${annotation.id}`}
                   >
                     <Trash2 className="w-4 h-4" />
                   </Button>
                 </div>
               </div>
-              <div className="mt-2 text-xs text-muted-foreground" data-testid={`text-annotation-coords-${annotation.id}`}>
+              <div className="mt-2 text-xs text-muted-foreground pl-9">
                 {formatCoordinate(annotation.gpsLat, true)}, {formatCoordinate(annotation.gpsLon, false)}
               </div>
             </div>
@@ -234,7 +201,6 @@ export default function AnnotationList({
         )}
       </div>
 
-      {/* Edit modal rendered outside the list to avoid event bubbling issues */}
       {editingAnnotation && (
         <EditAnnotationModal
           annotation={editingAnnotation}
