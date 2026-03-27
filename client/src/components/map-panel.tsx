@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Annotation } from "@shared/schema";
 import { getAnnotationColor } from "./helpers/video-player-helpers";
 
@@ -14,8 +14,9 @@ interface MapPanelProps {
   selectedAnnotationId?: string | null;
   onAnnotationSelect: (id: string | null) => void;
   onMarkerMove: (id: string, updates: { gpsLat: number; gpsLon: number }) => void;
-  shouldZoomToSelection?: boolean; // New prop to control zoom behavior
-  useSatelliteView?: boolean; // New prop to control tile layer type
+  shouldZoomToSelection?: boolean;
+  useSatelliteView?: boolean;
+  carPosition?: { lat: number; lon: number } | null;
 }
 
 export default function MapPanel({
@@ -25,10 +26,15 @@ export default function MapPanel({
   onMarkerMove,
   shouldZoomToSelection = true,
   useSatelliteView = false,
+  carPosition = null,
 }: MapPanelProps) {
   const mapRef = useRef<any>(null);
   const markersRef = useRef<Map<string, any>>(new Map());
+  const carMarkerRef = useRef<any>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
+  const hasCenteredOnCarRef = useRef<boolean>(false);
+  const prevSelectedIdRef = useRef<string | null>(selectedAnnotationId);
+  const [isMapReady, setIsMapReady] = useState(false);
 
   // Initialize map
   useEffect(() => {
@@ -55,6 +61,7 @@ export default function MapPanel({
       }
       
       mapRef.current = map;
+      setIsMapReady(true);
     };
 
     initMap();
@@ -135,6 +142,74 @@ export default function MapPanel({
     }
   }, [annotations, onAnnotationSelect, onMarkerMove]);
 
+  // Center map on car when BOTH map and carPosition are ready
+  useEffect(() => {
+    if (!isMapReady || !carPosition || hasCenteredOnCarRef.current) return;
+
+    const map = mapRef.current;
+    
+    // Center the map on car position
+    map.setView([carPosition.lat, carPosition.lon], 16);
+    
+    // Lock to prevent other effects from stealing the camera
+    hasCenteredOnCarRef.current = true;
+    map.hasInitialViewSet = true;
+
+  }, [carPosition, isMapReady]);
+
+  // Update car position marker
+  useEffect(() => {
+    if (!mapRef.current || typeof window.L === 'undefined') return;
+    if (!carPosition) return;
+
+    const map = mapRef.current;
+
+    // Create or update car marker
+    if (!carMarkerRef.current) {
+      // Create car marker with car icon
+      carMarkerRef.current = window.L.marker([carPosition.lat, carPosition.lon], {
+        zIndexOffset: 1000
+      });
+
+      const carIcon = window.L.divIcon({
+        className: 'car-marker',
+        html: `<div style="
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+        ">
+          <div style="
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background-color: #3b82f6;
+            border: 3px solid white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+          ">🚗</div>
+          <div style="
+            width: 6px;
+            height: 60px;
+            background-color: #3b82f6;
+            border: 1px solid white;
+            margin-top: -2px;
+          "></div>
+        </div>`,
+        iconSize: [24, 34],
+        iconAnchor: [12, 12]
+      });
+
+      carMarkerRef.current.setIcon(carIcon);
+      carMarkerRef.current.bindPopup(`<div><strong>Current Position</strong><br/>GPS: ${carPosition.lat.toFixed(6)}, ${carPosition.lon.toFixed(6)}</div>`);
+      carMarkerRef.current.addTo(map);
+    } else {
+      carMarkerRef.current.setLatLng([carPosition.lat, carPosition.lon]);
+    }
+  }, [carPosition]);
+
   // Update marker styles when selection changes (separate effect to avoid unnecessary recreations)
   useEffect(() => {
     if (!mapRef.current || typeof window.L === 'undefined') return;
@@ -176,31 +251,31 @@ export default function MapPanel({
       const marker = markersRef.current.get(selectedAnnotationId);
       
       if (annotation && marker) {
-        // Only zoom if shouldZoomToSelection is true (from external selection)
         if (shouldZoomToSelection) {
-          // Zoom IN to level 18 and center on the selected marker (more zoomed)
           map.setView([annotation.gpsLat, annotation.gpsLon], 16);
-          // Open popup when selection comes from annotation list
           marker.openPopup();
         }
-        
-        // Don't open popup for marker clicks/drags (shouldZoomToSelection = false)
       }
+      // Remember that we selected something
+      prevSelectedIdRef.current = selectedAnnotationId; 
+
     } else {
-      // When no annotation is selected, close all popups and zoom out
+      // When no annotation is selected, close all popups
       map.closePopup();
       
-      if (annotations.length > 0 && shouldZoomToSelection) {
-        // Fit bounds to show all markers (only if zoom is enabled)
+      // Only center on group if we just deselected an annotation (not on initial load)
+      if (prevSelectedIdRef.current && annotations.length > 0 && shouldZoomToSelection) {
         const markers = markersRef.current;
         if (markers.size > 0) {
-          // Get all markers and fit bounds
           const group = new window.L.featureGroup(Array.from(markers.values()));
           const bounds = group.getBounds();
           const center = bounds.getCenter();
-          map.setView([center.lat, center.lng], 16); // Less zoom out when deselected
+          map.setView([center.lat, center.lng], 16);
         }
       }
+      
+      // Reset the memo
+      prevSelectedIdRef.current = null;
     }
   }, [selectedAnnotationId, annotations, shouldZoomToSelection]);
 

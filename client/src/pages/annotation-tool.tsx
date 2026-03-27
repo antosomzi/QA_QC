@@ -705,6 +705,9 @@ export default function AnnotationTool() {
               onAnnotationUpdate={handleAnnotationUpdate}
               onAnnotationDelete={handleAnnotationDelete}
               onBackToVideoView={() => setViewMode("video")}
+              gpsData={gpsData}
+              currentFrame={currentFrame}
+              fps={selectedVideo?.fps || 30}
             />
           </div>
         )}

@@ -1,9 +1,10 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import MapPanel from "./map-panel";
 import AnnotationList from "./annotation-list";
 import { Button } from "@/components/ui/button";
 import { Play, MapPin, List, ZoomIn, ZoomOut, X } from "lucide-react";
-import type { Annotation, BoundingBox } from "@shared/schema";
+import type { Annotation, BoundingBox, GpsData } from "@shared/schema";
+import { getGPSForFrame } from "@/lib/gps-utils";
 
 interface MapOnlyViewProps {
   annotations: Annotation[];
@@ -13,6 +14,9 @@ interface MapOnlyViewProps {
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void;
   onAnnotationDelete: (id: string) => void;
   onBackToVideoView: () => void;
+  gpsData?: GpsData | null;
+  currentFrame?: number;
+  fps?: number;
 }
 
 export default function MapOnlyView({
@@ -23,9 +27,18 @@ export default function MapOnlyView({
   onAnnotationUpdate,
   onAnnotationDelete,
   onBackToVideoView,
+  gpsData,
+  currentFrame = 0,
+  fps = 30,
 }: MapOnlyViewProps) {
   const [showAnnotationsPanel, setShowAnnotationsPanel] = useState(true);
   const [shouldZoomToSelection, setShouldZoomToSelection] = useState<boolean>(true);
+
+  // Calculate current car position from GPS data
+  const carPosition = useMemo(() => {
+    if (!gpsData?.data || !fps) return null;
+    return getGPSForFrame(gpsData.data as any[], currentFrame, fps);
+  }, [gpsData, currentFrame, fps]);
 
   // Function to handle selection from annotation list (with zoom)
   const handleAnnotationListSelection = useCallback((id: string | null) => {
@@ -51,6 +64,7 @@ export default function MapOnlyView({
             onMarkerMove={onAnnotationUpdate}
             shouldZoomToSelection={shouldZoomToSelection}
             useSatelliteView={true}
+            carPosition={carPosition}
           />
         </div>
         
