@@ -70,6 +70,7 @@ interface VideoPlayerProps {
 
 export interface VideoPlayerHandle {
   seekToFrame: (frame: number) => void;
+  toggleFullscreen: () => void;
 }
 
 const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
@@ -172,7 +173,21 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
     lastFrameRef.current = frame;
   }, [fps, ptsData]);
 
-  useImperativeHandle(ref, () => ({ seekToFrame }), [seekToFrame]);
+   const toggleFullscreen = useCallback(() => {
+    if (!containerRef.current) return;
+
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen().catch((err) => {
+        // Ignorer les erreurs de plein écran
+      });
+    } else {
+      document.exitFullscreen().catch(() => {
+        // Ignorer silencieusement les erreurs de timing (déjà en train de quitter)
+      });
+    }
+  }, []);
+  
+  useImperativeHandle(ref, () => ({ seekToFrame, toggleFullscreen }), [seekToFrame, toggleFullscreen]);
 
   // Memoize bounding boxes for current frame
   // Force re-calculation when currentTime changes to ensure sync
@@ -328,19 +343,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
     }
   }, [isPlaying]);
 
-  const toggleFullscreen = useCallback(() => {
-    if (!containerRef.current) return;
-
-    if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().catch((err) => {
-        // Ignorer les erreurs de plein écran
-      });
-    } else {
-      document.exitFullscreen().catch(() => {
-        // Ignorer silencieusement les erreurs de timing (déjà en train de quitter)
-      });
-    }
-  }, []);
+ 
 
   // Listen for fullscreen changes
   useEffect(() => {

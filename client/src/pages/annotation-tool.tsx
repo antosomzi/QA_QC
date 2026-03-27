@@ -659,9 +659,8 @@ export default function AnnotationTool() {
                       boundingBoxes={boundingBoxes}
                       onAnnotationUpdate={handleAnnotationUpdate}
                       onAnnotationDelete={handleAnnotationDelete}
-                      onCheckSign={(annotation) => {
-                        console.log("Check sign:", annotation);
-                        // TODO: Implement check sign logic
+                      onCheckSign={() => {
+                        videoPlayerRef.current?.toggleFullscreen();
                       }}
                     />
                   </div>

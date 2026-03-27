@@ -12,7 +12,7 @@ interface BoundingBoxListProps {
   boundingBoxes: BoundingBox[];
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void;
   onAnnotationDelete: (id: string) => void;
-  onCheckSign?: (annotation: Annotation) => void;
+  onCheckSign?: () => void;
 }
 
 export default function BoundingBoxList({
@@ -121,7 +121,7 @@ export default function BoundingBoxList({
         {/* Check Sign Button */}
         <Button
           className="w-full h-10 text-lg font-semibold bg-green-600 hover:bg-green-700 text-white"
-          onClick={() => onCheckSign?.(annotation)}
+          onClick={() => onCheckSign?.()}
         >
           <Search className="w-6 h-6 mr-2" />
           Check Sign
