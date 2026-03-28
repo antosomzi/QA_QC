@@ -7,19 +7,35 @@ import type { Annotation } from "@shared/schema";
 import SignTypeSelector from "./sign-type-selector";
 
 interface EditAnnotationModalProps {
-  annotation: Annotation;
+  annotation?: Annotation;
+  initialSignType?: string;
+  initialGpsLat?: number;
+  initialGpsLon?: number;
   onSave: (updates: Partial<Annotation>) => void;
   onClose: () => void;
+  mode?: "edit" | "create";
 }
 
 export default function EditAnnotationModal({
   annotation,
+  initialSignType = "",
+  initialGpsLat,
+  initialGpsLon,
   onSave,
-  onClose
+  onClose,
+  mode = "edit"
 }: EditAnnotationModalProps) {
-  const [signType, setSignType] = useState<string>(annotation.signType);
-  const [gpsLat, setGpsLat] = useState(annotation.gpsLat);
-  const [gpsLon, setGpsLon] = useState(annotation.gpsLon);
+  const isCreateMode = mode === "create";
+  
+  const [signType, setSignType] = useState<string>(
+    isCreateMode ? initialSignType : (annotation?.signType ?? "")
+  );
+  const [gpsLat, setGpsLat] = useState<number>(
+    isCreateMode ? (initialGpsLat ?? 0) : (annotation?.gpsLat ?? 0)
+  );
+  const [gpsLon, setGpsLon] = useState<number>(
+    isCreateMode ? (initialGpsLon ?? 0) : (annotation?.gpsLon ?? 0)
+  );
 
   const handleSave = () => {
     const updates: Partial<Annotation> = {
@@ -52,11 +68,11 @@ export default function EditAnnotationModal({
   }, [onClose]);
 
   return (
-    <div 
+    <div
       className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50"
       onClick={onClose}
     >
-      <div 
+      <div
         className="bg-background rounded-lg shadow-lg w-96 p-6 relative z-[100000]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -67,7 +83,9 @@ export default function EditAnnotationModal({
           <X className="w-4 h-4" />
         </button>
 
-        <h2 className="text-lg font-semibold mb-4">Edit Annotation</h2>
+        <h2 className="text-lg font-semibold mb-4">
+          {isCreateMode ? "Create Annotation" : "Edit Annotation"}
+        </h2>
 
         <div className="space-y-4">
           <div>

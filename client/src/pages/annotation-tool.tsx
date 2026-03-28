@@ -9,11 +9,13 @@ import BoundingBoxList from "@/components/bounding-box-list";
 import FileUpload from "@/components/file-upload";
 import GpsUpload from "@/components/gps-upload";
 import MapOnlyView from "@/components/map-only-view";
+import EditAnnotationModal from "@/components/edit-annotation-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ArrowLeft, Map, Video, X, Pencil, Check } from "lucide-react";
+import { getCarPosition } from "@/lib/gps-utils";
 import type { Video as VideoType, GpsData, Annotation, AnnotationWithBoundingBoxes, BoundingBox } from "@shared/schema";
 
 export default function AnnotationTool() {
@@ -26,6 +28,9 @@ export default function AnnotationTool() {
   const [viewMode, setViewMode] = useState<"video" | "map">("video");
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState("");
+  const [isPlacementMode, setIsPlacementMode] = useState<boolean>(false);
+  const [ghostMarkerPosition, setGhostMarkerPosition] = useState<{ lat: number; lon: number } | null>(null);
+  const [showEditModal, setShowEditModal] = useState<boolean>(false);
   const { toast } = useToast();
   const videoPlayerRef = useRef<VideoPlayerHandle | null>(null);
 
@@ -318,6 +323,74 @@ export default function AnnotationTool() {
     }
   }, [folderId, refetchAnnotations, toast, queryClient]);
 
+  const handleAddAnnotation = useCallback(() => {
+    // Get current car position and enter placement mode
+    const carPos = getCarPosition(gpsData, currentFrame, selectedVideo?.fps || 30);
+    if (carPos) {
+      setGhostMarkerPosition({ lat: carPos.lat, lon: carPos.lon });
+      setIsPlacementMode(true);
+    } else {
+      toast({
+        title: "No GPS data",
+        description: "Cannot place sign without GPS data.",
+        variant: "destructive",
+      });
+    }
+  }, [gpsData, currentFrame, selectedVideo, toast]);
+
+  const handleSavePlacement = useCallback(() => {
+    if (!ghostMarkerPosition) return;
+    // Open the edit modal with the ghost marker position
+    setShowEditModal(true);
+  }, [ghostMarkerPosition]);
+
+  const handleCancelPlacement = useCallback(() => {
+    setIsPlacementMode(false);
+    setGhostMarkerPosition(null);
+  }, []);
+
+  const handleModalSave = useCallback(async (updates: Partial<Annotation>) => {
+    if (!ghostMarkerPosition) return;
+
+    try {
+      const newAnnotationData = {
+        folderId: folderId,
+        videoId: selectedVideo?.id,
+        signType: updates.signType ?? "",
+        gpsLat: ghostMarkerPosition.lat,
+        gpsLon: ghostMarkerPosition.lon,
+        classificationConfidence: 1.0,
+        detectionConfidence: 1.0,
+      };
+
+      const response = await apiRequest("POST", "/api/annotations", newAnnotationData);
+      const createdAnnotation = await response.json();
+
+      refetchAnnotations();
+      handleAnnotationListSelection(createdAnnotation.id);
+
+      toast({
+        title: "Annotation created",
+        description: "New annotation has been added to the folder.",
+      });
+
+      setIsPlacementMode(false);
+      setGhostMarkerPosition(null);
+      setShowEditModal(false);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to create annotation.",
+        variant: "destructive",
+      });
+    }
+  }, [ghostMarkerPosition, folderId, selectedVideo, refetchAnnotations, toast, handleAnnotationListSelection]);
+
+  const handleModalClose = useCallback(() => {
+    setShowEditModal(false);
+  }, []);
+
+      
   const handleBoundingBoxUpdate = useCallback(async (id: string, updates: Partial<BoundingBox>) => {
     try {
       // Get current data from the cache to avoid stale closures
@@ -689,6 +762,7 @@ export default function AnnotationTool() {
                       onAnnotationSelect={handleAnnotationListSelection}
                       onAnnotationUpdate={handleAnnotationUpdate}
                       onAnnotationDelete={handleAnnotationDelete}
+                      onAddAnnotation={handleAddAnnotation}
                     />
                   </div>
                 </div>
@@ -704,14 +778,71 @@ export default function AnnotationTool() {
               onAnnotationSelect={setSelectedAnnotationId}
               onAnnotationUpdate={handleAnnotationUpdate}
               onAnnotationDelete={handleAnnotationDelete}
+              onAddAnnotation={handleAddAnnotation}
               onBackToVideoView={() => setViewMode("video")}
-              gpsData={gpsData}
-              currentFrame={currentFrame}
-              fps={selectedVideo?.fps || 30}
+              carPosition={getCarPosition(gpsData, currentFrame, selectedVideo?.fps || 30)}
             />
           </div>
         )}
       </div>
+
+      {/* Placement Mode Overlay - rendered on top of everything */}
+      {isPlacementMode && (
+        <>
+          <MapOnlyView
+            annotations={annotations}
+            boundingBoxes={boundingBoxes}
+            selectedAnnotationId={selectedAnnotationId}
+            onAnnotationSelect={setSelectedAnnotationId}
+            onAnnotationUpdate={handleAnnotationUpdate}
+            onAnnotationDelete={handleAnnotationDelete}
+            onAddAnnotation={handleAddAnnotation}
+            onBackToVideoView={() => {}}
+            carPosition={getCarPosition(gpsData, currentFrame, selectedVideo?.fps || 30)}
+            isPlacementMode={true}
+            ghostMarkerPosition={ghostMarkerPosition}
+            onGhostMarkerChange={setGhostMarkerPosition}
+          />
+          {/* Placement Controls - rendered ABOVE the map (outside MapOnlyView to avoid z-index issues) */}
+          <div className="fixed inset-0 z-[99998] pointer-events-none">
+            {/* Top Bar - Title and Cancel */}
+            <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleCancelPlacement}
+                className="shadow-lg pointer-events-auto"
+              >
+                <X className="w-4 h-4 mr-2" />
+                Cancel
+              </Button>
+            </div>
+
+            {/* Bottom Right - Save Button */}
+            <div className="absolute bottom-8 right-8 pointer-events-auto">
+              <Button
+                size="lg"
+                onClick={handleSavePlacement}
+                className="bg-green-600 hover:bg-green-700 text-white shadow-lg"
+              >
+                <Check className="w-5 h-5 mr-2" />
+                Save Sign
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Edit Modal for creating new annotation */}
+      {showEditModal && ghostMarkerPosition && (
+        <EditAnnotationModal
+          mode="create"
+          initialGpsLat={ghostMarkerPosition.lat}
+          initialGpsLon={ghostMarkerPosition.lon}
+          onSave={handleModalSave}
+          onClose={handleModalClose}
+        />
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { GPSPoint } from "@shared/schema";
+import type { GPSPoint, GpsData } from "@shared/schema";
 
 /**
  * Utility functions for GPS data processing and interpolation
@@ -107,6 +107,22 @@ export function getGPSForFrame(
   const adjustedTimestamp = timestamp + firstGpsTimestamp;
 
   return interpolateGPS(gpsPoints, adjustedTimestamp);
+}
+
+/**
+ * Get the current car position from GPS data for a given frame
+ * @param gpsData - The GPS data object containing the data array
+ * @param currentFrame - The current frame index
+ * @param fps - The frames per second of the video
+ * @returns The GPS position { lat, lon } or null if not available
+ */
+export function getCarPosition(
+  gpsData: GpsData | null | undefined,
+  currentFrame: number,
+  fps: number
+): { lat: number; lon: number } | null {
+  if (!gpsData?.data || !fps) return null;
+  return getGPSForFrame(gpsData.data as any[], currentFrame, fps);
 }
 
 export function calculateDistance(point1: GPSPoint, point2: GPSPoint): number {

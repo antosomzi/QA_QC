@@ -13,6 +13,7 @@ interface AnnotationListProps {
   onAnnotationSelect: (id: string | null) => void;
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void;
   onAnnotationDelete: (id: string) => void;
+  onAddAnnotation: () => void;
 }
 
 export default function AnnotationList({
@@ -22,6 +23,7 @@ export default function AnnotationList({
   onAnnotationSelect,
   onAnnotationUpdate,
   onAnnotationDelete,
+  onAddAnnotation,
 }: AnnotationListProps) {
   const [editingAnnotation, setEditingAnnotation] = useState<Annotation | null>(null);
   const selectedAnnotationRef = useRef<HTMLDivElement>(null);
@@ -75,7 +77,7 @@ export default function AnnotationList({
           <h3 className="text-lg font-medium">Signs</h3>
           <Button
             className="h-8 px-3 text-sm font-medium bg-green-600 hover:bg-green-700 text-white"
-            onClick={() => console.log("hello")}
+            onClick={onAddAnnotation}
           >
             Add New Signs
           </Button>

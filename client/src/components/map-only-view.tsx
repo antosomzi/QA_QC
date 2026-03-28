@@ -1,10 +1,9 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
 import MapPanel from "./map-panel";
 import AnnotationList from "./annotation-list";
 import { Button } from "@/components/ui/button";
 import { Play, MapPin, List, ZoomIn, ZoomOut, X } from "lucide-react";
-import type { Annotation, BoundingBox, GpsData } from "@shared/schema";
-import { getGPSForFrame } from "@/lib/gps-utils";
+import type { Annotation, BoundingBox } from "@shared/schema";
 
 interface MapOnlyViewProps {
   annotations: Annotation[];
@@ -13,10 +12,15 @@ interface MapOnlyViewProps {
   onAnnotationSelect: (id: string | null) => void;
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void;
   onAnnotationDelete: (id: string) => void;
+  onAddAnnotation: () => void;
   onBackToVideoView: () => void;
-  gpsData?: GpsData | null;
+  carPosition?: { lat: number; lon: number } | null;
   currentFrame?: number;
   fps?: number;
+  // Placement mode props - passed through to MapPanel
+  isPlacementMode?: boolean;
+  ghostMarkerPosition?: { lat: number; lon: number } | null;
+  onGhostMarkerChange?: (position: { lat: number; lon: number }) => void;
 }
 
 export default function MapOnlyView({
@@ -26,19 +30,17 @@ export default function MapOnlyView({
   onAnnotationSelect,
   onAnnotationUpdate,
   onAnnotationDelete,
+  onAddAnnotation,
   onBackToVideoView,
-  gpsData,
+  carPosition,
   currentFrame = 0,
   fps = 30,
+  isPlacementMode = false,
+  ghostMarkerPosition = null,
+  onGhostMarkerChange,
 }: MapOnlyViewProps) {
   const [showAnnotationsPanel, setShowAnnotationsPanel] = useState(true);
   const [shouldZoomToSelection, setShouldZoomToSelection] = useState<boolean>(true);
-
-  // Calculate current car position from GPS data
-  const carPosition = useMemo(() => {
-    if (!gpsData?.data || !fps) return null;
-    return getGPSForFrame(gpsData.data as any[], currentFrame, fps);
-  }, [gpsData, currentFrame, fps]);
 
   // Function to handle selection from annotation list (with zoom)
   const handleAnnotationListSelection = useCallback((id: string | null) => {
@@ -53,7 +55,7 @@ export default function MapOnlyView({
   }, [onAnnotationSelect]);
 
   return (
-    <div className="flex h-full w-full bg-background">
+    <div className={`flex ${isPlacementMode ? 'fixed inset-0 z-[99997]' : 'h-full w-full'} bg-background`}>
       {/* Main Map Area */}
       <div className="flex-1 relative">
         <div className="absolute inset-0">
@@ -65,60 +67,67 @@ export default function MapOnlyView({
             shouldZoomToSelection={shouldZoomToSelection}
             useSatelliteView={true}
             carPosition={carPosition}
+            isPlacementMode={isPlacementMode}
+            ghostMarkerPosition={ghostMarkerPosition}
+            onGhostMarkerChange={onGhostMarkerChange}
           />
         </div>
-        
-        {/* Map Controls */}
-        <div className="absolute top-4 right-4 flex flex-col space-y-2 z-10">
-          <Button 
-            size="sm" 
-            variant="secondary" 
-            className="w-10 h-10 p-0 rounded-full shadow-lg"
-            onClick={() => {
-              console.log("Zoom in clicked");
-            }}
-          >
-            <ZoomIn className="w-4 h-4" />
-          </Button>
-          <Button 
-            size="sm" 
-            variant="secondary" 
-            className="w-10 h-10 p-0 rounded-full shadow-lg"
-            onClick={() => {
-              console.log("Zoom out clicked");
-            }}
-          >
-            <ZoomOut className="w-4 h-4" />
-          </Button>
-        </div>
-        
-        {/* Annotation Summary */}
-        <div className="absolute bottom-4 left-4 bg-card/80 backdrop-blur-sm rounded-lg p-3 shadow-md border border-border z-10">
-          <div className="flex items-center space-x-2">
-            <div className="text-sm font-medium text-foreground">
-              Annotations: {annotations.length}
+
+        {isPlacementMode ? null : (
+          <>
+            {/* Map Controls */}
+            <div className="absolute top-4 right-4 flex flex-col space-y-2 z-10">
+              <Button
+                size="sm"
+                variant="secondary"
+                className="w-10 h-10 p-0 rounded-full shadow-lg"
+                onClick={() => {
+                  console.log("Zoom in clicked");
+                }}
+              >
+                <ZoomIn className="w-4 h-4" />
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="w-10 h-10 p-0 rounded-full shadow-lg"
+                onClick={() => {
+                  console.log("Zoom out clicked");
+                }}
+              >
+                <ZoomOut className="w-4 h-4" />
+              </Button>
             </div>
-            {selectedAnnotationId && (
-              <div className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded">
-                {annotations.find(a => a.id === selectedAnnotationId)?.signType || "Selected"}
+
+            {/* Annotation Summary */}
+            <div className="absolute bottom-4 left-4 bg-card/80 backdrop-blur-sm rounded-lg p-3 shadow-md border border-border z-10">
+              <div className="flex items-center space-x-2">
+                <div className="text-sm font-medium text-foreground">
+                  Annotations: {annotations.length}
+                </div>
+                {selectedAnnotationId && (
+                  <div className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded">
+                    {annotations.find(a => a.id === selectedAnnotationId)?.signType || "Selected"}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        </div>
-        
-        {/* Toggle Annotations Panel Button */}
-        <Button
-          variant="secondary"
-          size="sm"
-          className="absolute top-4 left-4 rounded-full shadow-lg z-10"
-          onClick={() => setShowAnnotationsPanel(!showAnnotationsPanel)}
-        >
-          {showAnnotationsPanel ? <X className="w-4 h-4" /> : <List className="w-4 h-4" />}
-        </Button>
+            </div>
+
+            {/* Toggle Annotations Panel Button */}
+            <Button
+              variant="secondary"
+              size="sm"
+              className="absolute top-4 left-4 rounded-full shadow-lg z-10"
+              onClick={() => setShowAnnotationsPanel(!showAnnotationsPanel)}
+            >
+              {showAnnotationsPanel ? <X className="w-4 h-4" /> : <List className="w-4 h-4" />}
+            </Button>
+          </>
+        )}
       </div>
-      
-      {/* Right Panel - Annotations */}
-      {showAnnotationsPanel && (
+
+      {/* Right Panel - Annotations (only in normal mode) */}
+      {!isPlacementMode && showAnnotationsPanel && (
         <div className="w-80 bg-card border-l border-border flex flex-col h-full">
           <div className="p-4 border-b border-border flex-shrink-0">
             <h3 className="text-lg font-semibold">Annotations</h3>
@@ -134,6 +143,7 @@ export default function MapOnlyView({
                   onAnnotationSelect={handleAnnotationListSelection}
                   onAnnotationUpdate={onAnnotationUpdate}
                   onAnnotationDelete={onAnnotationDelete}
+                  onAddAnnotation={onAddAnnotation}
                 />
               </div>
             </div>

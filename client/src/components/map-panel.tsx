@@ -17,6 +17,11 @@ interface MapPanelProps {
   shouldZoomToSelection?: boolean;
   useSatelliteView?: boolean;
   carPosition?: { lat: number; lon: number } | null;
+  onMapReady?: (map: any) => void;
+  // Ghost marker props for placement mode
+  isPlacementMode?: boolean;
+  ghostMarkerPosition?: { lat: number; lon: number } | null;
+  onGhostMarkerChange?: (position: { lat: number; lon: number }) => void;
 }
 
 export default function MapPanel({
@@ -27,12 +32,18 @@ export default function MapPanel({
   shouldZoomToSelection = true,
   useSatelliteView = false,
   carPosition = null,
+  onMapReady,
+  isPlacementMode = false,
+  ghostMarkerPosition = null,
+  onGhostMarkerChange,
 }: MapPanelProps) {
   const mapRef = useRef<any>(null);
   const markersRef = useRef<Map<string, any>>(new Map());
   const carMarkerRef = useRef<any>(null);
+  const ghostMarkerRef = useRef<any>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const hasCenteredOnCarRef = useRef<boolean>(false);
+  const hasCenteredOnGhostRef = useRef<boolean>(false);
   const prevSelectedIdRef = useRef<string | null>(selectedAnnotationId);
   const [isMapReady, setIsMapReady] = useState(false);
 
@@ -62,6 +73,7 @@ export default function MapPanel({
       
       mapRef.current = map;
       setIsMapReady(true);
+      onMapReady?.(map);
     };
 
     initMap();
@@ -143,19 +155,35 @@ export default function MapPanel({
   }, [annotations, onAnnotationSelect, onMarkerMove]);
 
   // Center map on car when BOTH map and carPosition are ready
+  // SKIP this in placement mode (we want to stay centered on ghost marker)
   useEffect(() => {
-    if (!isMapReady || !carPosition || hasCenteredOnCarRef.current) return;
+    if (!isMapReady || !carPosition || hasCenteredOnCarRef.current || isPlacementMode) return;
 
     const map = mapRef.current;
-    
+
     // Center the map on car position
     map.setView([carPosition.lat, carPosition.lon], 16);
-    
+
     // Lock to prevent other effects from stealing the camera
     hasCenteredOnCarRef.current = true;
     map.hasInitialViewSet = true;
 
-  }, [carPosition, isMapReady]);
+  }, [carPosition, isMapReady, isPlacementMode]);
+
+  // Center map on ghost marker when in placement mode (same logic as car centering)
+  useEffect(() => {
+    if (!isMapReady || !ghostMarkerPosition || !isPlacementMode || hasCenteredOnGhostRef.current) return;
+
+    const map = mapRef.current;
+
+    // Center the map on ghost marker with max zoom
+    map.setView([ghostMarkerPosition.lat, ghostMarkerPosition.lon], 20);
+
+    // Lock to prevent other effects from stealing the camera
+    hasCenteredOnGhostRef.current = true;
+    map.hasInitialViewSet = true;
+
+  }, [ghostMarkerPosition, isMapReady, isPlacementMode]);
 
   // Update car position marker
   useEffect(() => {
@@ -209,6 +237,78 @@ export default function MapPanel({
       carMarkerRef.current.setLatLng([carPosition.lat, carPosition.lon]);
     }
   }, [carPosition]);
+
+  // Handle ghost marker for placement mode
+  useEffect(() => {
+    if (!mapRef.current || typeof window.L === 'undefined') return;
+
+    const map = mapRef.current;
+
+    if (!ghostMarkerPosition) {
+      // Remove ghost marker if position is null
+      if (ghostMarkerRef.current) {
+        map.removeLayer(ghostMarkerRef.current);
+        ghostMarkerRef.current = null;
+      }
+      // Reset the centered flag when exiting placement mode
+      hasCenteredOnGhostRef.current = false;
+      return;
+    }
+
+    // Create or update ghost marker
+    if (!ghostMarkerRef.current) {
+      ghostMarkerRef.current = window.L.marker([ghostMarkerPosition.lat, ghostMarkerPosition.lon], {
+        draggable: true,
+        zIndexOffset: 1000
+      });
+
+      const ghostIcon = window.L.divIcon({
+        className: 'ghost-marker',
+        html: `<div style="
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+        ">
+          <div style="
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background-color: #fbbf24;
+            border: 3px solid white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: bold;
+            color: white;
+          ">+</div>
+          <div style="
+            width: 6px;
+            height: 60px;
+            background-color: #3b82f6;
+            border: 1px solid white;
+            margin-top: -2px;
+          "></div>
+        </div>`,
+        iconSize: [32, 42],
+        iconAnchor: [16, 21]
+      });
+
+      ghostMarkerRef.current.setIcon(ghostIcon);
+
+      ghostMarkerRef.current.on('dragend', () => {
+        const pos = ghostMarkerRef.current.getLatLng();
+        onGhostMarkerChange?.({ lat: pos.lat, lon: pos.lng });
+      });
+
+      ghostMarkerRef.current.addTo(map);
+    } else {
+      // Update existing marker position (during drag)
+      ghostMarkerRef.current.setLatLng([ghostMarkerPosition.lat, ghostMarkerPosition.lon]);
+      // DON'T call setView here - it would fight with the user's drag
+    }
+  }, [ghostMarkerPosition, onGhostMarkerChange]);
 
   // Update marker styles when selection changes (separate effect to avoid unnecessary recreations)
   useEffect(() => {
