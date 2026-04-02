@@ -1,7 +1,6 @@
 import { useRef, useEffect, useState, useCallback, useMemo, forwardRef, useImperativeHandle } from "react";
 import { Button } from "@/components/ui/button";
 import { Play, Pause, SkipBack, SkipForward, X, Maximize, Minimize } from "lucide-react";
-import { getGPSForFrame } from "@/lib/gps-utils";
 import { 
   getCanvasCoordinates, 
   mapCanvasPointToVideoPoint,
@@ -66,6 +65,15 @@ interface VideoPlayerProps {
   onAnnotationSelect: (id: string | null) => void;
   onVideoDelete: () => void;
   folderId: string;
+  isAddSignDrawingMode?: boolean;
+  onAddSignBoundingBoxDrawn?: (boundingBoxData: {
+    frameIndex: number;
+    frameTimestampMs: number;
+    bboxX: number;
+    bboxY: number;
+    bboxWidth: number;
+    bboxHeight: number;
+  }) => void;
 }
 
 export interface VideoPlayerHandle {
@@ -88,6 +96,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
   onAnnotationSelect,
   onVideoDelete,
   folderId,
+  isAddSignDrawingMode = false,
+  onAddSignBoundingBoxDrawn,
 }: VideoPlayerProps, ref) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -547,6 +557,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
     // Reset bbox click flag
     clickedOnBboxRef.current = false;
 
+    // Dedicated add-sign flow: always start drawing a fresh box on the current frame
+    if (isAddSignDrawingMode) {
+      setIsDrawing(true);
+      setDrawStart(coords);
+      setCurrentBBox(null);
+      return;
+    }
+
     // Check if we're clicking on a bounding box handle
     const result = findBoundingBoxAt(coords.x, coords.y, boundingBoxes, actualFrame, 10);
 
@@ -579,21 +597,18 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
       }
     }
 
-    // If we clicked on empty space, only start drawing if GPS data is available
-    if (gpsData) {
-      // Start drawing a new bounding box
-      setIsDrawing(true);
-      setDrawStart(coords);
-      setCurrentBBox(null);
-    }
-  }, [gpsData, getCanvasCoordinatesLocal, boundingBoxes, annotations, onAnnotationSelect, getActualFrame]);
+  }, [getCanvasCoordinatesLocal, boundingBoxes, annotations, onAnnotationSelect, getActualFrame, isAddSignDrawingMode]);
 
   const handleCanvasClick = useCallback(() => {
+    if (isAddSignDrawingMode) {
+      return;
+    }
+
     // Only toggle play/pause if we didn't click on a bounding box
     if (!clickedOnBboxRef.current) {
       togglePlayPause();
     }
-  }, [togglePlayPause]);
+  }, [togglePlayPause, isAddSignDrawingMode]);
 
   const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
     const coords = getCanvasCoordinatesLocal(e);
@@ -641,14 +656,23 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
       setCurrentBBox(bbox);
       return;
     }
+
+    if (isAddSignDrawingMode && canvasRef.current) {
+      canvasRef.current.style.cursor = 'crosshair';
+      return;
+    }
     
     // Update cursor based on what's under the mouse
     const result = findBoundingBoxAt(coords.x, coords.y, boundingBoxes, actualFrame, 10);
     if (canvasRef.current) {
       const handle = result?.handle || null;
-      setCursorForHandle(canvasRef.current, handle);
+      if (handle) {
+        setCursorForHandle(canvasRef.current, handle);
+      } else {
+        canvasRef.current.style.cursor = 'default';
+      }
     }
-  }, [isDrawing, drawStart, isMoving, isResizing, selectedBoundingBox, moveStart, resizeHandle, boundingBoxes, getCanvasCoordinatesLocal, getActualFrame]);
+  }, [isDrawing, drawStart, isMoving, isResizing, selectedBoundingBox, moveStart, resizeHandle, boundingBoxes, getCanvasCoordinatesLocal, getActualFrame, isAddSignDrawingMode]);
 
   const handleCanvasMouseUp = useCallback((e: React.MouseEvent) => {
     
@@ -682,46 +706,19 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
       return;
     }
     
-    if (isDrawing && currentBBox && gpsData && fps) {
+    if (isDrawing && currentBBox && fps) {
       const actualFrame = getActualFrame();
       
       // Check if the bounding box has minimum size (avoid point-like boxes)
       if (isValidBoundingBoxSize(currentBBox)) {
-        
-        // Check if there's a selected annotation and no bounding box for it on the current frame
-        const selectedAnnotation = selectedAnnotationId ? annotations.find(ann => ann.id === selectedAnnotationId) : null;
-        const hasSelectedAnnotationBboxOnCurrentFrame = selectedAnnotation ? 
-          boundingBoxes.some(bbox => bbox.annotationId === selectedAnnotation.id && bbox.frameIndex === actualFrame) : 
-          false;
-        
-        if (selectedAnnotation && !hasSelectedAnnotationBboxOnCurrentFrame) {
-          // Add a bounding box to the existing selected annotation
-          const boundingBoxData = createBoundingBoxData(actualFrame, currentTime, currentBBox);
-          onBoundingBoxCreate(selectedAnnotation.id, boundingBoxData);
-        } else {
-          // Create a new annotation with bounding box
-          const gpsPoint = getGPSForFrame(gpsData.data as any[], actualFrame, fps);
-          if (!gpsPoint) {
-            console.warn("No GPS data available for current frame");
-            setIsDrawing(false);
-            setDrawStart(null);
-            setCurrentBBox(null);
-            return;
-          }
+        const boundingBoxData = createBoundingBoxData(actualFrame, currentTime, currentBBox);
 
-          // Prepare the data for both annotation and bounding box
-          const annotationData = {
-            folderId: folderId,
-            videoId: video.id,
-            signType: "Unknown",
-            gpsLat: gpsPoint.lat,
-            gpsLon: gpsPoint.lon,
-          };
-
-          const boundingBoxData = createBoundingBoxData(actualFrame, currentTime, currentBBox);
-
-          // Call the function with separated data
-          onAnnotationCreate(annotationData, boundingBoxData);
+        if (isAddSignDrawingMode && onAddSignBoundingBoxDrawn) {
+          onAddSignBoundingBoxDrawn(boundingBoxData);
+          setIsDrawing(false);
+          setDrawStart(null);
+          setCurrentBBox(null);
+          return;
         }
       } else {
         // If the box is too small (like a simple click), deselect instead
@@ -750,7 +747,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
     setMoveStart(null);
     setResizeHandle(null);
     setInitialBoundingBox(null);
-  }, [isDrawing, currentBBox, gpsData, video, currentTime, onAnnotationCreate, onBoundingBoxCreate, folderId, isMoving, isResizing, selectedBoundingBox, onBoundingBoxUpdate, getCanvasCoordinatesLocal, onAnnotationSelect, selectedAnnotationId, annotations, boundingBoxes, initialBoundingBox, getActualFrame]);
+  }, [isDrawing, currentBBox, currentTime, isMoving, isResizing, selectedBoundingBox, onBoundingBoxUpdate, onAnnotationSelect, initialBoundingBox, getActualFrame, isAddSignDrawingMode, onAddSignBoundingBoxDrawn, fps]);
 
   // Draw annotations on canvas (only when paused or for interactions)
   useEffect(() => {
@@ -847,7 +844,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
           {/* Canvas - doit être au-dessus de la vidéo */}
           <canvas
             ref={canvasRef}
-            className="absolute inset-0 w-full h-full cursor-crosshair z-10"
+            className={`absolute inset-0 w-full h-full z-10 ${isAddSignDrawingMode ? 'cursor-crosshair' : 'cursor-default'}`}
             width={video.width || 1920}
             height={video.height || 1080}
             onMouseDown={handleCanvasMouseDown}

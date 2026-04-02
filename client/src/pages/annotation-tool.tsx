@@ -18,6 +18,15 @@ import { ArrowLeft, Map, Video, X, Pencil, Check } from "lucide-react";
 import { getCarPosition } from "@/lib/gps-utils";
 import type { Video as VideoType, GpsData, Annotation, AnnotationWithBoundingBoxes, BoundingBox } from "@shared/schema";
 
+type PendingAddSignBoundingBox = {
+  frameIndex: number;
+  frameTimestampMs: number;
+  bboxX: number;
+  bboxY: number;
+  bboxWidth: number;
+  bboxHeight: number;
+};
+
 export default function AnnotationTool() {
   const params = useParams();
   const folderId = params.folderId as string;
@@ -31,6 +40,8 @@ export default function AnnotationTool() {
   const [isPlacementMode, setIsPlacementMode] = useState<boolean>(false);
   const [ghostMarkerPosition, setGhostMarkerPosition] = useState<{ lat: number; lon: number } | null>(null);
   const [showEditModal, setShowEditModal] = useState<boolean>(false);
+  const [isAddSignDrawingMode, setIsAddSignDrawingMode] = useState<boolean>(false);
+  const [pendingAddSignBoundingBox, setPendingAddSignBoundingBox] = useState<PendingAddSignBoundingBox | null>(null);
   const { toast } = useToast();
   const videoPlayerRef = useRef<VideoPlayerHandle | null>(null);
 
@@ -324,19 +335,65 @@ export default function AnnotationTool() {
   }, [folderId, refetchAnnotations, toast, queryClient]);
 
   const handleAddAnnotation = useCallback(() => {
-    // Get current car position and enter placement mode
-    const carPos = getCarPosition(gpsData, currentFrame, selectedVideo?.fps || 30);
-    if (carPos) {
-      setGhostMarkerPosition({ lat: carPos.lat, lon: carPos.lon });
-      setIsPlacementMode(true);
-    } else {
+    if (isAddSignDrawingMode) {
+      setIsAddSignDrawingMode(false);
+      setPendingAddSignBoundingBox(null);
+      toast({
+        title: "Add sign cancelled",
+        description: "Bounding box drawing mode has been cancelled.",
+      });
+      return;
+    }
+
+    if (!selectedVideo) {
+      toast({
+        title: "No video loaded",
+        description: "Load a video before adding a sign.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!gpsData) {
       toast({
         title: "No GPS data",
         description: "Cannot place sign without GPS data.",
         variant: "destructive",
       });
+      return;
     }
-  }, [gpsData, currentFrame, selectedVideo, toast]);
+
+    setPendingAddSignBoundingBox(null);
+    setIsAddSignDrawingMode(true);
+    toast({
+      title: "Draw bounding box",
+      description: "Draw a box on the current frame to continue sign creation.",
+    });
+  }, [gpsData, selectedVideo, toast, isAddSignDrawingMode]);
+
+  const handleAddSignBoundingBoxDrawn = useCallback((boundingBoxData: PendingAddSignBoundingBox) => {
+    if (!gpsData) {
+      setIsAddSignDrawingMode(false);
+      setPendingAddSignBoundingBox(null);
+      return;
+    }
+
+    const frameForPlacement = Number.isFinite(boundingBoxData.frameIndex)
+      ? boundingBoxData.frameIndex
+      : currentFrame;
+
+    const carPos = getCarPosition(gpsData, frameForPlacement, selectedVideo?.fps || 30);
+    if (!carPos) {
+      setIsAddSignDrawingMode(false);
+      setPendingAddSignBoundingBox(null);
+      return;
+    }
+
+    setPendingAddSignBoundingBox(boundingBoxData);
+    setGhostMarkerPosition({ lat: carPos.lat, lon: carPos.lon });
+    setIsAddSignDrawingMode(false);
+    setIsPlacementMode(true);
+  }, [gpsData, selectedVideo, currentFrame]);
 
   const handleSavePlacement = useCallback(() => {
     if (!ghostMarkerPosition) return;
@@ -347,6 +404,8 @@ export default function AnnotationTool() {
   const handleCancelPlacement = useCallback(() => {
     setIsPlacementMode(false);
     setGhostMarkerPosition(null);
+    setPendingAddSignBoundingBox(null);
+    setIsAddSignDrawingMode(false);
   }, []);
 
   const handleModalSave = useCallback(async (updates: Partial<Annotation>) => {
@@ -366,6 +425,13 @@ export default function AnnotationTool() {
       const response = await apiRequest("POST", "/api/annotations", newAnnotationData);
       const createdAnnotation = await response.json();
 
+      if (pendingAddSignBoundingBox) {
+        await apiRequest("POST", "/api/bounding-boxes", {
+          annotationId: createdAnnotation.id,
+          ...pendingAddSignBoundingBox,
+        });
+      }
+
       refetchAnnotations();
       handleAnnotationListSelection(createdAnnotation.id);
 
@@ -377,6 +443,8 @@ export default function AnnotationTool() {
       setIsPlacementMode(false);
       setGhostMarkerPosition(null);
       setShowEditModal(false);
+      setPendingAddSignBoundingBox(null);
+      setIsAddSignDrawingMode(false);
     } catch (error) {
       toast({
         title: "Error",
@@ -384,10 +452,14 @@ export default function AnnotationTool() {
         variant: "destructive",
       });
     }
-  }, [ghostMarkerPosition, folderId, selectedVideo, refetchAnnotations, toast, handleAnnotationListSelection]);
+  }, [ghostMarkerPosition, folderId, selectedVideo, refetchAnnotations, toast, handleAnnotationListSelection, pendingAddSignBoundingBox]);
 
   const handleModalClose = useCallback(() => {
     setShowEditModal(false);
+    setIsPlacementMode(false);
+    setGhostMarkerPosition(null);
+    setPendingAddSignBoundingBox(null);
+    setIsAddSignDrawingMode(false);
   }, []);
 
       
@@ -717,6 +789,8 @@ export default function AnnotationTool() {
                       onAnnotationSelect={handleVideoPlayerSelection}
                       onVideoDelete={handleVideoDelete}
                       folderId={folderId}
+                      isAddSignDrawingMode={isAddSignDrawingMode}
+                      onAddSignBoundingBoxDrawn={handleAddSignBoundingBoxDrawn}
                       ref={videoPlayerRef}
                     />
                   ) : (
@@ -762,6 +836,7 @@ export default function AnnotationTool() {
                       onAnnotationSelect={handleAnnotationListSelection}
                       onAnnotationUpdate={handleAnnotationUpdate}
                       onAnnotationDelete={handleAnnotationDelete}
+                      isAddSignDrawingMode={isAddSignDrawingMode}
                       onAddAnnotation={handleAddAnnotation}
                     />
                   </div>

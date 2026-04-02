@@ -44,7 +44,7 @@ export default function MapPanel({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const hasCenteredOnCarRef = useRef<boolean>(false);
   const hasCenteredOnGhostRef = useRef<boolean>(false);
-  const prevSelectedIdRef = useRef<string | null>(selectedAnnotationId);
+  const prevSelectedIdRef = useRef<string | null>(selectedAnnotationId ?? null);
   const [isMapReady, setIsMapReady] = useState(false);
 
   // Initialize map

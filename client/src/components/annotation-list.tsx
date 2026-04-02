@@ -10,6 +10,7 @@ interface AnnotationListProps {
   annotations: Annotation[];
   boundingBoxes: BoundingBox[];
   selectedAnnotationId?: string | null;
+  isAddSignDrawingMode?: boolean;
   onAnnotationSelect: (id: string | null) => void;
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void;
   onAnnotationDelete: (id: string) => void;
@@ -20,6 +21,7 @@ export default function AnnotationList({
   annotations,
   boundingBoxes,
   selectedAnnotationId,
+  isAddSignDrawingMode = false,
   onAnnotationSelect,
   onAnnotationUpdate,
   onAnnotationDelete,
@@ -76,10 +78,12 @@ export default function AnnotationList({
         <div className="flex items-center gap-3">
           <h3 className="text-lg font-medium">Signs</h3>
           <Button
-            className="h-8 px-3 text-sm font-medium bg-green-600 hover:bg-green-700 text-white"
+            className={`h-8 px-3 text-sm font-medium text-white ${
+              isAddSignDrawingMode ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'
+            }`}
             onClick={onAddAnnotation}
           >
-            Add New Signs
+            {isAddSignDrawingMode ? 'Drawing on image… (click to cancel)' : 'Add New Signs'}
           </Button>
         </div>
         
