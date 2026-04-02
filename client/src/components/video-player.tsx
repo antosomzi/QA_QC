@@ -126,6 +126,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
   const dragTimeoutRef = useRef<number | null>(null);
   const wasPlayingBeforeDragRef = useRef<boolean>(false);
   const clickedOnBboxRef = useRef<boolean>(false);
+  const suppressNextCanvasClickRef = useRef<boolean>(false);
 
   // State for fullscreen
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -600,6 +601,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
   }, [getCanvasCoordinatesLocal, boundingBoxes, annotations, onAnnotationSelect, getActualFrame, isAddSignDrawingMode]);
 
   const handleCanvasClick = useCallback(() => {
+    if (suppressNextCanvasClickRef.current) {
+      suppressNextCanvasClickRef.current = false;
+      return;
+    }
+
     if (isAddSignDrawingMode) {
       return;
     }
@@ -714,6 +720,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
         const boundingBoxData = createBoundingBoxData(actualFrame, currentTime, currentBBox);
 
         if (isAddSignDrawingMode && onAddSignBoundingBoxDrawn) {
+          suppressNextCanvasClickRef.current = true;
           onAddSignBoundingBoxDrawn(boundingBoxData);
           setIsDrawing(false);
           setDrawStart(null);
