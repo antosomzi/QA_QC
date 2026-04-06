@@ -258,6 +258,15 @@ export class PostgresStorage implements IStorage {
       throw new Error('Unsupported import format: expected frame-by-frame JSON with output.frames or frames array');
     }
 
+    // Optional root-level filtering support:
+    // - filtered_cluster_ids: direct cluster_id values
+    const filteredClusterIds = data?.filtered_cluster_ids ?? data?.output?.filtered_cluster_ids ?? [];
+
+    let allowedClusterIds: Set<any> | null = null;
+    if (filteredClusterIds.length > 0) {
+      allowedClusterIds = new Set(filteredClusterIds);
+    }
+
     type ClusterAgg = {
       signType: string;
       // assume same 'class' for a given cluster_id
@@ -286,6 +295,14 @@ export class PostgresStorage implements IStorage {
       const signs = Array.isArray(frame.signs) ? frame.signs : [];
       for (const sign of signs) {
         const clusterId = sign.cluster_id;
+
+        // If a filtered list is provided, only keep signs whose cluster_id is allowed.
+        if (allowedClusterIds) {
+          if (clusterId === undefined || clusterId === null || !allowedClusterIds.has(clusterId)) {
+            continue;
+          }
+        }
+
         const fallbackKey = `${sign.class || 'unknown'}_${(sign.coordinates || []).join('_')}`;
         const key = (clusterId !== undefined && clusterId !== null) ? `cluster_${clusterId}` : `fallback_${fallbackKey}`;
 
