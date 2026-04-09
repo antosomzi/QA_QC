@@ -40,6 +40,7 @@ export default function AnnotationTool() {
   const [isPlacementMode, setIsPlacementMode] = useState<boolean>(false);
   const [ghostMarkerPosition, setGhostMarkerPosition] = useState<{ lat: number; lon: number } | null>(null);
   const [showEditModal, setShowEditModal] = useState<boolean>(false);
+  const [restoreAnnotation, setRestoreAnnotation] = useState<Annotation | null>(null);
   const [isAddSignDrawingMode, setIsAddSignDrawingMode] = useState<boolean>(false);
   const [pendingAddSignBoundingBox, setPendingAddSignBoundingBox] = useState<PendingAddSignBoundingBox | null>(null);
   const { toast } = useToast();
@@ -140,10 +141,20 @@ export default function AnnotationTool() {
 
   // Function to handle selection from video player (without frame navigation)
   const handleVideoPlayerSelection = useCallback((id: string | null) => {
+    if (id && isFilteredMode) {
+      const selectedAnnotationData = annotationsWithBboxes.find(ann => ann.id === id);
+      if (selectedAnnotationData?.isFiltered === true) {
+        setShouldZoomToSelection(true);
+        setSelectedAnnotationId(id);
+        setRestoreAnnotation(selectedAnnotationData);
+        return;
+      }
+    }
+
     setShouldZoomToSelection(true);
     setSelectedAnnotationId(id);
     // No frame navigation - stay on current frame
-  }, []);
+  }, [isFilteredMode, annotationsWithBboxes]);
 
   // Function to handle selection from map (without zoom but with video navigation)
   const handleMapSelection = useCallback((id: string | null) => {
@@ -339,6 +350,18 @@ export default function AnnotationTool() {
       });
     }
   }, [folderId, refetchAnnotations, toast, queryClient]);
+
+  const handleRestoreSave = useCallback(async (updates: Partial<Annotation>) => {
+    if (!restoreAnnotation) return;
+    await handleAnnotationUpdate(restoreAnnotation.id, {
+      ...updates,
+      isFiltered: false,
+    });
+  }, [restoreAnnotation, handleAnnotationUpdate]);
+
+  const handleRestoreClose = useCallback(() => {
+    setRestoreAnnotation(null);
+  }, []);
 
   const handleAddAnnotation = useCallback(() => {
     if (isAddSignDrawingMode) {
@@ -799,6 +822,7 @@ export default function AnnotationTool() {
                       onAnnotationSelect={handleVideoPlayerSelection}
                       onVideoDelete={handleVideoDelete}
                       folderId={folderId}
+                      isFilteredMode={isFilteredMode}
                       isAddSignDrawingMode={isAddSignDrawingMode}
                       onAddSignBoundingBoxDrawn={handleAddSignBoundingBoxDrawn}
                       ref={videoPlayerRef}
@@ -863,10 +887,12 @@ export default function AnnotationTool() {
               annotations={annotations}
               boundingBoxes={boundingBoxes}
               selectedAnnotationId={selectedAnnotationId}
+              isFilteredMode={isFilteredMode}
               onAnnotationSelect={setSelectedAnnotationId}
               onAnnotationUpdate={handleAnnotationUpdate}
               onAnnotationDelete={handleAnnotationDelete}
               onAddAnnotation={handleAddAnnotation}
+              onShowFilteredSigns={onShowFilteredSigns}
               onBackToVideoView={() => setViewMode("video")}
               carPosition={getCarPosition(gpsData, currentFrame, selectedVideo?.fps || 30)}
             />
@@ -881,10 +907,12 @@ export default function AnnotationTool() {
             annotations={annotations}
             boundingBoxes={boundingBoxes}
             selectedAnnotationId={selectedAnnotationId}
+            isFilteredMode={isFilteredMode}
             onAnnotationSelect={setSelectedAnnotationId}
             onAnnotationUpdate={handleAnnotationUpdate}
             onAnnotationDelete={handleAnnotationDelete}
             onAddAnnotation={handleAddAnnotation}
+            onShowFilteredSigns={onShowFilteredSigns}
             onBackToVideoView={() => {}}
             carPosition={getCarPosition(gpsData, currentFrame, selectedVideo?.fps || 30)}
             isPlacementMode={true}
@@ -929,6 +957,17 @@ export default function AnnotationTool() {
           initialGpsLon={ghostMarkerPosition.lon}
           onSave={handleModalSave}
           onClose={handleModalClose}
+        />
+      )}
+
+      {/* Restore modal from filtered sign click in video player */}
+      {restoreAnnotation && (
+        <EditAnnotationModal
+          annotation={restoreAnnotation}
+          mode="edit"
+          submitLabel="Restore"
+          onSave={handleRestoreSave}
+          onClose={handleRestoreClose}
         />
       )}
     </div>

@@ -11,9 +11,10 @@ interface EditAnnotationModalProps {
   initialSignType?: string;
   initialGpsLat?: number;
   initialGpsLon?: number;
-  onSave: (updates: Partial<Annotation>) => void;
+  onSave: (updates: Partial<Annotation>) => void | Promise<void>;
   onClose: () => void;
   mode?: "edit" | "create";
+  submitLabel?: string;
 }
 
 export default function EditAnnotationModal({
@@ -23,7 +24,8 @@ export default function EditAnnotationModal({
   initialGpsLon,
   onSave,
   onClose,
-  mode = "edit"
+  mode = "edit",
+  submitLabel,
 }: EditAnnotationModalProps) {
   const isCreateMode = mode === "create";
   
@@ -37,14 +39,14 @@ export default function EditAnnotationModal({
     isCreateMode ? (initialGpsLon ?? 0) : (annotation?.gpsLon ?? 0)
   );
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const updates: Partial<Annotation> = {
       signType,
       gpsLat,
       gpsLon,
     };
 
-    onSave(updates);
+    await onSave(updates);
     onClose();
   };
 
@@ -126,7 +128,7 @@ export default function EditAnnotationModal({
               Cancel
             </Button>
             <Button onClick={handleSave} data-testid="button-save-annotation">
-              Save Changes
+              {submitLabel ?? (isCreateMode ? "Create" : "Save Changes")}
             </Button>
           </div>
         </div>

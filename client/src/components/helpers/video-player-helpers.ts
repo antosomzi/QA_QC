@@ -463,6 +463,7 @@ export function drawBoundingBox(
   options: {
     showHandles?: boolean;
     isDashed?: boolean;
+    showFilteredBadge?: boolean;
   } = {}
 ): void {
   const canvas = ctx.canvas;
@@ -504,7 +505,10 @@ export function drawBoundingBox(
   // Draw background for label to make it readable
   const fontSize = isSelected ? 32 : 28;
   ctx.font = `bold ${fontSize}px Inter`;
-  const text = annotation.signType;
+  const shouldShowFilteredBadge = options.showFilteredBadge && annotation.isFiltered === true;
+  const text = shouldShowFilteredBadge
+    ? `${annotation.signType} ⚠ filtered`
+    : annotation.signType;
   const metrics = ctx.measureText(text);
   const textHeight = fontSize; // Use the actual font size
 

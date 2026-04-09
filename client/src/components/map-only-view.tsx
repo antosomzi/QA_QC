@@ -2,17 +2,19 @@ import { useState, useCallback } from "react";
 import MapPanel from "./map-panel";
 import AnnotationList from "./annotation-list";
 import { Button } from "@/components/ui/button";
-import { Play, MapPin, List, ZoomIn, ZoomOut, X } from "lucide-react";
+import { List, ZoomIn, ZoomOut, X } from "lucide-react";
 import type { Annotation, BoundingBox } from "@shared/schema";
 
 interface MapOnlyViewProps {
   annotations: Annotation[];
   boundingBoxes: BoundingBox[];
   selectedAnnotationId?: string | null;
+  isFilteredMode?: boolean;
   onAnnotationSelect: (id: string | null) => void;
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void;
   onAnnotationDelete: (id: string) => void;
   onAddAnnotation: () => void;
+  onShowFilteredSigns: () => void;
   onBackToVideoView: () => void;
   carPosition?: { lat: number; lon: number } | null;
   currentFrame?: number;
@@ -27,10 +29,12 @@ export default function MapOnlyView({
   annotations,
   boundingBoxes,
   selectedAnnotationId,
+  isFilteredMode = false,
   onAnnotationSelect,
   onAnnotationUpdate,
   onAnnotationDelete,
   onAddAnnotation,
+  onShowFilteredSigns,
   onBackToVideoView,
   carPosition,
   currentFrame = 0,
@@ -140,10 +144,12 @@ export default function MapOnlyView({
                   annotations={annotations}
                   boundingBoxes={boundingBoxes}
                   selectedAnnotationId={selectedAnnotationId}
+                  isFilteredMode={isFilteredMode}
                   onAnnotationSelect={handleAnnotationListSelection}
                   onAnnotationUpdate={onAnnotationUpdate}
                   onAnnotationDelete={onAnnotationDelete}
                   onAddAnnotation={onAddAnnotation}
+                  onShowFilteredSigns={onShowFilteredSigns}
                 />
               </div>
             </div>

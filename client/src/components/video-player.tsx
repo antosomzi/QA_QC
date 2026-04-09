@@ -65,6 +65,7 @@ interface VideoPlayerProps {
   onAnnotationSelect: (id: string | null) => void;
   onVideoDelete: () => void;
   folderId: string;
+  isFilteredMode?: boolean;
   isAddSignDrawingMode?: boolean;
   onAddSignBoundingBoxDrawn?: (boundingBoxData: {
     frameIndex: number;
@@ -96,6 +97,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
   onAnnotationSelect,
   onVideoDelete,
   folderId,
+  isFilteredMode = false,
   isAddSignDrawingMode = false,
   onAddSignBoundingBoxDrawn,
 }: VideoPlayerProps, ref) => {
@@ -140,7 +142,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
     selectedBoundingBox,
     currentBBox,
     isMoving,
-    isResizing
+    isResizing,
+    isFilteredMode,
   });
 
   // PTS data ref for rVFC loop (avoids stale closure)
@@ -155,9 +158,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
       selectedBoundingBox,
       currentBBox,
       isMoving,
-      isResizing
+      isResizing,
+      isFilteredMode,
     };
-  }, [boundingBoxes, annotations, selectedAnnotationId, selectedBoundingBox, currentBBox, isMoving, isResizing]);
+  }, [boundingBoxes, annotations, selectedAnnotationId, selectedBoundingBox, currentBBox, isMoving, isResizing, isFilteredMode]);
 
   // Keep PTS ref in sync
   useEffect(() => {
@@ -227,7 +231,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
       selectedBoundingBox: selBox,
       currentBBox: curBox,
       isMoving: moving,
-      isResizing: resizing
+      isResizing: resizing,
+      isFilteredMode: filteredMode,
     } = drawingDataRef.current;
     
     // Clear canvas
@@ -244,7 +249,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
       const bboxToRender = (selBox && bbox.id === selBox.id) ? selBox : bbox;
       const isSelected = annotation.id === selId;
       
-      drawBoundingBox(ctx, bboxToRender, annotation, annos, isSelected);
+      drawBoundingBox(ctx, bboxToRender, annotation, annos, isSelected, {
+        showFilteredBadge: filteredMode,
+      });
     });
     
     // Draw current bounding box being drawn
@@ -780,7 +787,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
       const bboxToRender = (selectedBoundingBox && bbox.id === selectedBoundingBox.id) ? selectedBoundingBox : bbox;
       const isSelected = annotation.id === selectedAnnotationId;
       
-      drawBoundingBox(ctx, bboxToRender, annotation, annotations, isSelected);
+      drawBoundingBox(ctx, bboxToRender, annotation, annotations, isSelected, {
+        showFilteredBadge: isFilteredMode,
+      });
     });
     
     // Draw current bounding box being drawn
@@ -794,7 +803,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
       const annotation = annotations.find(ann => ann.id === selectedBoundingBox.annotationId);
       
       if (annotation) {
-        drawBoundingBox(ctx, selectedBoundingBox, annotation, annotations, true);
+        drawBoundingBox(ctx, selectedBoundingBox, annotation, annotations, true, {
+          showFilteredBadge: isFilteredMode,
+        });
         
         // Draw handles if resizing
         if (isResizing) {
@@ -814,7 +825,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
         drawBoundingBoxHandles(ctx, selectedBbox);
       }
     }
-  }, [annotations, currentFrameBoundingBoxes, selectedAnnotationId, currentBBox, isMoving, isResizing, selectedBoundingBox, isPlaying]);
+  }, [annotations, currentFrameBoundingBoxes, selectedAnnotationId, currentBBox, isMoving, isResizing, selectedBoundingBox, isPlaying, isFilteredMode]);
 
   // Clean up cursor on unmount
   useEffect(() => {
