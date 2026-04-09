@@ -44,6 +44,7 @@ export default function AnnotationTool() {
   const [pendingAddSignBoundingBox, setPendingAddSignBoundingBox] = useState<PendingAddSignBoundingBox | null>(null);
   const { toast } = useToast();
   const videoPlayerRef = useRef<VideoPlayerHandle | null>(null);
+  const [isFilteredMode, setIsFilteredMode] = useState(false);
 
   // Fetch folder data to get project ID for back navigation
   const { data: folder } = useQuery({
@@ -94,14 +95,19 @@ export default function AnnotationTool() {
     queryFn: () => fetch(`/api/annotations/folder/${folderId}/with-bboxes`).then(res => res.json()),
   });
 
-  // Extract annotations and bounding boxes from the combined data
+  // - false (default): hide filtered annotations
+  // - true: show filtered + non-filtered annotations
   const annotations: Annotation[] = useMemo(() => {
-    return annotationsWithBboxes.map(({ boundingBoxes, ...annotation }) => annotation);
-  }, [annotationsWithBboxes]);
-  
+    return annotationsWithBboxes
+      .filter(annotation => isFilteredMode || annotation.isFiltered !== true)
+      .map(({ boundingBoxes, ...annotation }) => annotation);
+  }, [annotationsWithBboxes, isFilteredMode]);
+
   const boundingBoxes: BoundingBox[] = useMemo(() => {
-    return annotationsWithBboxes.flatMap(annotation => annotation.boundingBoxes);
-  }, [annotationsWithBboxes]);
+    return annotationsWithBboxes
+      .filter(annotation => isFilteredMode || annotation.isFiltered !== true)
+      .flatMap(annotation => annotation.boundingBoxes);
+  }, [annotationsWithBboxes, isFilteredMode]);
 
   // Get the selected annotation object
   const selectedAnnotation = useMemo(() => {
@@ -634,6 +640,10 @@ export default function AnnotationTool() {
     }
   }, [editedName, folder, folderId, toast]);
 
+  const onShowFilteredSigns = () => {
+    setIsFilteredMode(prev => !prev);
+  };
+
   return (
     <div className="h-screen bg-background text-foreground flex flex-col">
       {/* Header */}
@@ -838,6 +848,9 @@ export default function AnnotationTool() {
                       onAnnotationDelete={handleAnnotationDelete}
                       isAddSignDrawingMode={isAddSignDrawingMode}
                       onAddAnnotation={handleAddAnnotation}
+                      isFilteredMode={isFilteredMode}
+                      onShowFilteredSigns={onShowFilteredSigns}
+
                     />
                   </div>
                 </div>

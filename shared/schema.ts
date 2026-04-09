@@ -77,6 +77,7 @@ export const annotations = pgTable("annotations", {
   gpsLon: real("gps_lon").notNull(),
   classificationConfidence: real("classification_confidence"),
   detectionConfidence: real("detection_confidence"),
+  isFiltered: boolean("is_filtered").default(false), // New column to indicate if the annotation is filtered out
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

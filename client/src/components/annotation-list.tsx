@@ -5,16 +5,19 @@ import type { Annotation, BoundingBox } from "@shared/schema";
 import { getAnnotationCSSColor, getAnnotationIndex, getAnnotationHexColor, getAnnotationColor, getLowConfidenceIssue } from "./helpers/video-player-helpers";
 import EditAnnotationModal from "./edit-annotation-modal";
 import { getSignTypeById } from "@/data/sign-types";
+import { is } from "drizzle-orm";
 
 interface AnnotationListProps {
   annotations: Annotation[];
   boundingBoxes: BoundingBox[];
   selectedAnnotationId?: string | null;
   isAddSignDrawingMode?: boolean;
+  isFilteredMode?: boolean;
   onAnnotationSelect: (id: string | null) => void;
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void;
   onAnnotationDelete: (id: string) => void;
   onAddAnnotation: () => void;
+  onShowFilteredSigns: () => void;
 }
 
 export default function AnnotationList({
@@ -22,10 +25,12 @@ export default function AnnotationList({
   boundingBoxes,
   selectedAnnotationId,
   isAddSignDrawingMode = false,
+  isFilteredMode = false,
   onAnnotationSelect,
   onAnnotationUpdate,
   onAnnotationDelete,
   onAddAnnotation,
+  onShowFilteredSigns
 }: AnnotationListProps) {
   const [editingAnnotation, setEditingAnnotation] = useState<Annotation | null>(null);
   const selectedAnnotationRef = useRef<HTMLDivElement>(null);
@@ -47,6 +52,7 @@ export default function AnnotationList({
     const direction = isLat ? (coord >= 0 ? 'N' : 'S') : (coord >= 0 ? 'E' : 'W');
     return `${abs.toFixed(4)}°${direction}`;
   };
+
 
   const sortedAnnotations = useMemo(() => {
       const startTimes = new Map<string, number>();
@@ -84,6 +90,14 @@ export default function AnnotationList({
             onClick={onAddAnnotation}
           >
             {isAddSignDrawingMode ? 'Drawing on image… (click to cancel)' : 'Add New Signs'}
+          </Button>
+          <Button
+            className={`h-8 px-3 text-sm font-medium text-white ${
+              isAddSignDrawingMode ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'
+            }`}
+            onClick={onShowFilteredSigns}
+          >
+            {isFilteredMode ? 'Remove filtered signs' : 'Show filtered signs'}
           </Button>
         </div>
         

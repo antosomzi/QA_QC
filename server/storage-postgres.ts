@@ -269,6 +269,8 @@ export class PostgresStorage implements IStorage {
 
     type ClusterAgg = {
       signType: string;
+      clusterId?: any;
+      isFiltered: boolean;
       // assume same 'class' for a given cluster_id
       gpsLat?: number;
       gpsLon?: number;
@@ -296,19 +298,14 @@ export class PostgresStorage implements IStorage {
       for (const sign of signs) {
         const clusterId = sign.cluster_id;
 
-        // If a filtered list is provided, only keep signs whose cluster_id is allowed.
-        if (allowedClusterIds) {
-          if (clusterId === undefined || clusterId === null || !allowedClusterIds.has(clusterId)) {
-            continue;
-          }
-        }
-
         const fallbackKey = `${sign.class || 'unknown'}_${(sign.coordinates || []).join('_')}`;
         const key = (clusterId !== undefined && clusterId !== null) ? `cluster_${clusterId}` : `fallback_${fallbackKey}`;
 
         if (!clusters.has(key)) {
           clusters.set(key, {
             signType: sign.class || 'unknown',
+            clusterId,
+            isFiltered: allowedClusterIds ? (clusterId === undefined || clusterId === null || !allowedClusterIds.has(clusterId)) : false,
             bboxes: []
           });
         }
@@ -374,6 +371,7 @@ export class PostgresStorage implements IStorage {
         signType: cluster.signType,
         classificationConfidence: avgClassificationConfidence,
         detectionConfidence: avgDetectionConfidence,
+        isFiltered: cluster.isFiltered,
       };
 
       // Check if an annotation already exists at this GPS location with the same signType
@@ -389,7 +387,20 @@ export class PostgresStorage implements IStorage {
         )
         .limit(1);
 
-      const annotationId = existingAnnotation?.id ?? (await this.db.insert(annotations).values(insertAnnotation).returning())[0].id;
+      let annotationId: string;
+      if (existingAnnotation) {
+        annotationId = existingAnnotation.id;
+        await this.db.update(annotations)
+          .set({
+            isFiltered: cluster.isFiltered,
+            classificationConfidence: avgClassificationConfidence,
+            detectionConfidence: avgDetectionConfidence,
+            updatedAt: new Date(),
+          })
+          .where(eq(annotations.id, existingAnnotation.id));
+      } else {
+        annotationId = (await this.db.insert(annotations).values(insertAnnotation).returning())[0].id;
+      }
 
       for (const bbox of filteredBboxes) {
         const insertBoundingBox: InsertBoundingBox = {
