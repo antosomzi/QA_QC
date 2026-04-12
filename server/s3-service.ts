@@ -12,14 +12,13 @@
 
 import {
   S3Client,
-  PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
   HeadObjectCommand,
 } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import fs from "fs";
-import path from "path";
 
 // ---------------------------------------------------------------------------
 // Configuration (read once at import time)
@@ -38,6 +37,12 @@ const PRESIGNED_URL_EXPIRY = 3600;
 // ---------------------------------------------------------------------------
 
 const s3Client = new S3Client({ region: S3_REGION });
+
+/**
+ * In-memory upload progress cache.
+ * Key: s3Key | Value: progress percentage (0..100), or -1 on error.
+ */
+export const uploadProgressCache = new Map<string, number>();
 
 // ---------------------------------------------------------------------------
 // Public helpers
@@ -65,22 +70,55 @@ export function buildS3Key(filename: string): string {
  */
 export async function uploadVideoToS3(localPath: string, s3Key: string): Promise<string> {
   const fileStream = fs.createReadStream(localPath);
-  const fileSize = fs.statSync(localPath).size;
+  const fileSize = fs.statSync(localPath).size; // On a la taille exacte ici !
 
-  console.log(`📤 Uploading video to S3: s3://${S3_BUCKET_NAME}/${s3Key} (${(fileSize / 1024 / 1024).toFixed(1)} MB)`);
+  console.log(`📤 [S3] Début upload vers s3://${S3_BUCKET_NAME}/${s3Key} (${(fileSize / 1024 / 1024).toFixed(1)} MB)`);
 
-  await s3Client.send(
-    new PutObjectCommand({
-      Bucket: S3_BUCKET_NAME,
-      Key: s3Key,
-      Body: fileStream,
-      ContentType: "video/mp4",
-      StorageClass: "STANDARD",
-    }),
-  );
+  // On initialise explicitement le cache à 0 dès le début
+  uploadProgressCache.set(s3Key, 0);
 
-  console.log(`✅ Video uploaded to S3: ${s3Key}`);
-  return s3Key;
+  try {
+    const parallelUploads3 = new Upload({
+      client: s3Client,
+      params: {
+        Bucket: S3_BUCKET_NAME,
+        Key: s3Key,
+        Body: fileStream,
+        ContentType: "video/mp4",
+        StorageClass: "STANDARD",
+      },
+    });
+
+    parallelUploads3.on("httpUploadProgress", (progress) => {
+      // LOG TRÈS IMPORTANT : On regarde ce qu'AWS nous envoie
+      console.log(`📡 [S3 Event] loaded: ${progress.loaded}, total: ${progress.total}`);
+
+      // FIX : Si AWS ne donne pas le 'total', on utilise notre 'fileSize' manuel
+      const totalToUse = progress.total || fileSize; 
+
+      if (totalToUse && progress.loaded) {
+        const percentCompleted = Math.round((progress.loaded / totalToUse) * 100);
+        
+        // On ne loggue que tous les ~10% pour ne pas spammer la console
+        if (percentCompleted % 10 === 0) {
+           console.log(`⏳ [Cache] Mise à jour de ${s3Key} -> ${percentCompleted}%`);
+        }
+        
+        uploadProgressCache.set(s3Key, percentCompleted);
+      }
+    });
+
+    await parallelUploads3.done();
+
+    console.log(`✅ [S3] Upload terminé à 100% pour ${s3Key}`);
+    uploadProgressCache.set(s3Key, 100); // On force le 100% à la fin
+    return s3Key;
+    
+  } catch (error) {
+    console.error("❌ [S3] Erreur lors de l'upload:", error);
+    uploadProgressCache.set(s3Key, -1);
+    throw error;
+  }
 }
 
 /**

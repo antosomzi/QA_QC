@@ -9,7 +9,7 @@ import fs from "fs";
 import { randomUUID } from "crypto";
 import { getVideoMetadata, extractPtsData } from "./video-utils";
 import { createSessionMiddleware, createAuthRoutes, requireAuth } from "./auth";
-import { buildS3Key, uploadVideoToS3, getPresignedVideoUrl, deleteVideoFromS3, videoExistsInS3, s3Config } from "./s3-service";
+import { buildS3Key, uploadVideoToS3, getPresignedVideoUrl, deleteVideoFromS3, videoExistsInS3, s3Config, uploadProgressCache } from "./s3-service";
 
 const { Pool } = pg;
 
@@ -350,36 +350,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(400).json({ message: error instanceof Error ? error.message : "Failed to upload video" });
     }
   });
-
-  // Video routes
-  app.post("/api/folders/:folderId/videos", upload.single('video'), async (req, res) => {
+app.post("/api/folders/:folderId/videos", upload.single('video'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No video file provided" });
       }
 
-      // Vérifier que le dossier existe
       const folder = await storage.getFolder(req.params.folderId);
       if (!folder) {
         return res.status(404).json({ message: "Folder not found" });
       }
 
-      // Vérifier que le dossier n'a pas déjà une vidéo
       const existingVideos = await storage.getVideosByFolderId(req.params.folderId);
       if (existingVideos.length > 0) {
         return res.status(400).json({ message: "Folder already contains a video. Each folder can only contain one video." });
       }
 
-      // Extract video metadata using ffprobe for accurate FPS
       const videoFilePath = path.join('uploads', req.file.filename);
       let extractedMetadata = { fps: 30, duration: 0, width: 0, height: 0 };
-      let ptsData: number[] | null = null;
+      let ptsData: null | number[] = null;
+      
       try {
         extractedMetadata = await getVideoMetadata(videoFilePath);
         console.log(`[upload] Extracted metadata from video: fps=${extractedMetadata.fps}, duration=${extractedMetadata.duration}`);
       } catch (probeError) {
         console.warn(`[upload] Failed to probe video metadata, using defaults:`, probeError);
-        // Fall back to frontend-provided values if ffprobe fails
         extractedMetadata = {
           fps: req.body.fps ? parseFloat(req.body.fps) : 30,
           duration: req.body.duration ? parseFloat(req.body.duration) : 0,
@@ -388,7 +383,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
       }
 
-      // Extract per-frame PTS for VFR-safe frame navigation
       try {
         ptsData = await extractPtsData(videoFilePath);
         console.log(`[upload] Extracted ${ptsData.length} PTS values`);
@@ -410,24 +404,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertVideoSchema.parse(videoData);
       const video = await storage.createVideo(validatedData);
 
+      const s3Key = buildS3Key(req.file.filename);
+      video.s3Key = s3Key; 
+
+      console.log(`🔑 [POST] Clé générée pour le cache S3 : "${s3Key}"`);
+
       // Upload video to S3 and store the key
       try {
-        const s3Key = buildS3Key(req.file.filename);
+        // ⏳ Le Front-end reste à 99% tant que l'upload S3 n'est pas terminé
         await uploadVideoToS3(videoFilePath, s3Key);
-        // Update the video record with the S3 key
+
         await storage.updateVideo(video.id, { s3Key });
-        video.s3Key = s3Key;
-        // Remove local file after successful S3 upload
+
         if (fs.existsSync(videoFilePath)) {
           fs.unlinkSync(videoFilePath);
           console.log(`[upload] Local file deleted after S3 upload: ${videoFilePath}`);
         }
       } catch (s3Error) {
         console.error(`[upload] Failed to upload video to S3, keeping local file:`, s3Error);
-        // Video stays in local uploads/ as fallback
       }
 
-      // Associer toutes les annotations du folder à la vidéo si elles n'ont pas de videoId
       const annotations = await storage.getAnnotationsByFolderId(req.params.folderId);
       for (const annotation of annotations) {
         if (!annotation.videoId) {
@@ -436,6 +432,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       res.json(video);
+
     } catch (error) {
       if (error instanceof Error && error.message.includes("already contains a video")) {
         return res.status(400).json({ message: error.message });
@@ -468,6 +465,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(video);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch video" });
+    }
+  });
+
+  // Upload progress for video transfer to S3
+  app.get("/api/videos/:videoId/upload-progress", async (req, res) => {
+    try {
+      const { videoId } = req.params;
+      const video = await storage.getVideo(videoId);
+
+      if (!video) {
+        return res.status(404).json({ status: "not_found", progress: 0 });
+      }
+
+      // s3Key may not yet be persisted while upload is running; derive the same key used by upload.
+      const trackingS3Key = video.s3Key ?? buildS3Key(video.filename);
+      const progress = uploadProgressCache.get(trackingS3Key);
+
+  console.log(`🔍 [GET Polling] Recherche clé : "${trackingS3Key}" | Résultat : ${progress}`);
+
+      // Not in cache: either upload completed or unknown video
+      if (progress === undefined) {
+        if (video && video.s3Key) {
+          return res.json({ status: "completed", progress: 100 });
+        }
+        return res.status(404).json({ status: "not_found", progress: 0 });
+      }
+
+      if (progress === -1) {
+        return res.status(500).json({ status: "error", progress: 0 });
+      }
+
+      return res.json({ status: "uploading", progress });
+    } catch (error) {
+      return res.status(500).json({ status: "error", progress: 0 });
     }
   });
 
@@ -607,7 +638,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Clean up uploaded file
       fs.unlinkSync(req.file.path);
-      
+
       res.json(result);
     } catch (error) {
       res.status(400).json({ message: error instanceof Error ? error.message : "Failed to upload GPS data" });

@@ -8,6 +8,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ArrowLeft, Trash2, Upload, ArrowUpDown, ArrowUp, ArrowDown, Video, Tag } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import AppHeader from "@/components/app-header";
+import UploadProgressModal from "@/components/upload-progress-modal";
+import { useVideoUploadWithProgress } from "@/components/helpers/upload-video-helper";
 import type { Project, Folder as FolderType } from "@/types/project";
 
 /** Parse a timestamp-style folder name like "2026_01_16_13_41_04" into a Date */
@@ -65,9 +67,29 @@ export default function ProjectDetail() {
   });
 
   const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
-  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const {
+    isUploading: uploading,
+    uploadProgress,
+    isProgressModalOpen,
+    statusText,
+    uploadVideo,
+  } = useVideoUploadWithProgress({
+    projectId,
+    onSuccess: () => {
+      refetch();
+      toast({ title: "Video uploaded", description: "Recording folder created successfully." });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    },
+    onProgressError: () => {
+      toast({
+        title: "Upload failed",
+        description: "An error occurred while uploading the video.",
+        variant: "destructive",
+      });
+    },
+  });
 
   // Sort folders by parsed timestamp from name
   const sortedFolders = useMemo(() => {
@@ -85,35 +107,18 @@ export default function ProjectDetail() {
   }, [folders, sortOrder]);
 
   const handleUploadVideo = useCallback(async (file: File) => {
-    setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append("video", file);
-
-      const response = await fetch(`/api/projects/${projectId}/upload-video`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.message || "Upload failed");
-      }
-
-      refetch();
-      toast({ title: "Video uploaded", description: "Recording folder created successfully." });
+      await uploadVideo(file);
     } catch (error) {
       toast({
         title: "Upload failed",
         description: error instanceof Error ? error.message : "Failed to upload video.",
         variant: "destructive",
       });
-    } finally {
-      setUploading(false);
-      // Reset file input so same file can be re-selected
+      // Reset file input so same file can be re-selected after failure
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
-  }, [projectId, refetch, toast]);
+  }, [uploadVideo, toast]);
 
   const handleDeleteFolder = useCallback(async (folderId: string, folderName: string) => {
     if (!confirm(`Delete recording "${folderName}"? This will permanently delete all its data.`)) return;
@@ -140,6 +145,12 @@ export default function ProjectDetail() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <UploadProgressModal
+        open={isProgressModalOpen}
+        progress={uploadProgress}
+        statusText={statusText}
+      />
+
       <AppHeader>
         <Link to="/">
           <Button variant="ghost" size="sm" className="gap-2 text-gray-500 hover:text-gray-700">

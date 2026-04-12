@@ -5,7 +5,6 @@ import type { Annotation, BoundingBox } from "@shared/schema";
 import { getAnnotationCSSColor, getAnnotationIndex, getAnnotationHexColor, getAnnotationColor, getLowConfidenceIssue } from "./helpers/video-player-helpers";
 import EditAnnotationModal from "./edit-annotation-modal";
 import { getSignTypeById } from "@/data/sign-types";
-import { is } from "drizzle-orm";
 
 interface AnnotationListProps {
   annotations: Annotation[];
