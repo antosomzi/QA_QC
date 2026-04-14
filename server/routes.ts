@@ -10,6 +10,7 @@ import { randomUUID } from "crypto";
 import { getVideoMetadata, extractPtsData } from "./video-utils";
 import { createSessionMiddleware, createAuthRoutes, requireAuth } from "./auth";
 import { buildS3Key, uploadVideoToS3, getPresignedVideoUrl, deleteVideoFromS3, videoExistsInS3, s3Config, uploadProgressCache } from "./s3-service";
+import { deleteTempFile } from "./route-services";
 
 const { Pool } = pg;
 
@@ -245,109 +246,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Upload video and auto-create a folder in one operation.
   // The folder name is derived from the video filename (without extension).
   app.post("/api/projects/:projectId/upload-video", upload.single('video'), async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ message: "No video file provided" });
+    }
+
+    const { projectId } = req.params;
+    const { filename, originalname } = req.file;
+    const tempPath = path.join('uploads', filename);
+    const folderName = path.parse(originalname).name;
+
+    const abort = (status: number, message: string) => {
+      deleteTempFile(tempPath);
+      return res.status(status).json({ message });
+    };
+
     try {
-      if (!req.file) {
-        return res.status(400).json({ message: "No video file provided" });
+      const project = await storage.getProject(projectId);
+      if (!project) return abort(404, "Project not found");
+
+      const existingFolders = await storage.getFoldersByProjectId(projectId);
+      if (existingFolders.some(f => f.name === folderName)) {
+        return abort(409, `A recording named "${folderName}" already exists in this project.`);
       }
 
-      const project = await storage.getProject(req.params.projectId);
-      if (!project) {
-        // Clean up uploaded file
-        const tempPath = path.join('uploads', req.file.filename);
-        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-        return res.status(404).json({ message: "Project not found" });
-      }
 
-      // Derive folder name from video filename (strip extension)
-      const folderName = path.parse(req.file.originalname).name;
-
-      // Check if a folder with the same name already exists in this project
-      const existingFolders = await storage.getFoldersByProjectId(req.params.projectId);
-      const duplicate = existingFolders.find(f => f.name === folderName);
-      if (duplicate) {
-        // Clean up uploaded file
-        const tempPath = path.join('uploads', req.file.filename);
-        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-        return res.status(409).json({
-          message: `A recording named "${folderName}" already exists in this project. Please rename or delete the existing recording before uploading again.`,
-        });
-      }
-
-      // Also check if the video file already exists in S3
-      const s3Key = buildS3Key(req.file.filename);
+      const folder = await storage.createFolder({ name: folderName, projectId });
+      const s3Key = buildS3Key(filename);
       const alreadyInS3 = await videoExistsInS3(s3Key);
-      if (alreadyInS3) {
-        // Clean up uploaded file
-        const tempPath = path.join('uploads', req.file.filename);
-        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-        return res.status(409).json({
-          message: `A video file with the name "${req.file.originalname}" already exists in storage. This video may have been uploaded in another project. Please rename the file or delete the existing video first.`,
-        });
-      }
 
-      // Create folder
-      const folder = await storage.createFolder({
-        name: folderName,
-        projectId: req.params.projectId,
-      });
-
-      // Extract video metadata using ffprobe
-      const videoFilePath = path.join('uploads', req.file.filename);
-      let extractedMetadata = { fps: 30, duration: 0, width: 0, height: 0 };
-      let ptsData: number[] | null = null;
-      try {
-        extractedMetadata = await getVideoMetadata(videoFilePath);
-        console.log(`[upload-video] Extracted metadata: fps=${extractedMetadata.fps}, duration=${extractedMetadata.duration}`);
-      } catch (probeError) {
-        console.warn(`[upload-video] Failed to probe video metadata, using defaults:`, probeError);
-        extractedMetadata = {
-          fps: req.body.fps ? parseFloat(req.body.fps) : 30,
-          duration: req.body.duration ? parseFloat(req.body.duration) : 0,
-          width: req.body.width ? parseInt(req.body.width) : 0,
-          height: req.body.height ? parseInt(req.body.height) : 0,
-        };
-      }
-
-      // Extract per-frame PTS for VFR-safe frame navigation
-      try {
-        ptsData = await extractPtsData(videoFilePath);
-        console.log(`[upload-video] Extracted ${ptsData.length} PTS values`);
-      } catch (ptsError) {
-        console.warn(`[upload-video] Failed to extract PTS data (VFR navigation will fall back to CFR):`, ptsError);
-      }
-
-      // Create video record
-      const videoData = {
-        filename: req.file.filename,
-        originalName: req.file.originalname,
-        duration: extractedMetadata.duration,
-        fps: extractedMetadata.fps,
-        width: extractedMetadata.width,
-        height: extractedMetadata.height,
-        ptsData: ptsData,
+     
+      let videoData: {
+        filename: string;
+        originalName: string;
+        folderId: string;
+        s3Key?: string;
+        ptsData: number[] | null;
+        duration: number;
+        fps: number;
+        width: number;
+        height: number;
+      } = {
+        filename,
+        originalName: originalname,
         folderId: folder.id,
+        s3Key: alreadyInS3 ? s3Key : undefined,
+        ptsData: null,
+        // Valeurs par défaut depuis req.body (si fournies)
+        duration: req.body.duration ? parseFloat(req.body.duration) : 0,
+        fps: req.body.fps ? parseFloat(req.body.fps) : 30,
+        width: req.body.width ? parseInt(req.body.width) : 0,
+        height: req.body.height ? parseInt(req.body.height) : 0,
       };
 
+      if (!alreadyInS3) {
+        // Extraction des métadonnées réelles uniquement si la vidéo n'est pas déjà sur S3
+        try {
+          const metadata = await getVideoMetadata(tempPath);
+          videoData = { ...videoData, ...metadata }; // Écrase les valeurs par défaut
+        } catch (e) {
+          console.warn(
+            `[upload-video] Metadata probe failed, using defaults:`,
+            e instanceof Error ? e.message : String(e),
+          );
+        }
+
+        try {
+          videoData.ptsData = await extractPtsData(tempPath);
+        } catch (e) {
+          console.warn(
+            `[upload-video] PTS extraction failed:`,
+            e instanceof Error ? e.message : String(e),
+          );
+        }
+      }
+
+    
       const validatedData = insertVideoSchema.parse(videoData);
       const video = await storage.createVideo(validatedData);
 
-      // Upload to S3
-      try {
-        const s3Key = buildS3Key(req.file.filename);
-        await uploadVideoToS3(videoFilePath, s3Key);
-        await storage.updateVideo(video.id, { s3Key });
-        video.s3Key = s3Key;
-        if (fs.existsSync(videoFilePath)) {
-          fs.unlinkSync(videoFilePath);
-          console.log(`[upload-video] Local file deleted after S3 upload: ${videoFilePath}`);
+   
+      if (alreadyInS3) {
+        console.log(`[upload-video] Reused existing S3 object: ${s3Key}`);
+        deleteTempFile(tempPath); // On nettoie immédiatement
+      } else {
+        try {
+          await uploadVideoToS3(tempPath, s3Key);
+          await storage.updateVideo(video.id, { s3Key });
+          video.s3Key = s3Key;
+        } catch (s3Error) {
+          console.error(`[upload-video] Failed to upload to S3:`, s3Error);
+        } finally {
+          deleteTempFile(tempPath); 
         }
-      } catch (s3Error) {
-        console.error(`[upload-video] Failed to upload to S3, keeping local file:`, s3Error);
       }
 
-      res.json({ folder, video });
+     
+      return res.json({ folder, video });
+
     } catch (error) {
-      res.status(400).json({ message: error instanceof Error ? error.message : "Failed to upload video" });
+      return abort(400, error instanceof Error ? error.message : "Failed to upload video");
     }
   });
 app.post("/api/folders/:folderId/videos", upload.single('video'), async (req, res) => {
