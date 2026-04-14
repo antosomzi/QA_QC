@@ -24,6 +24,7 @@ import {
 } from "@shared/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { IStorage } from "./storage";
+import { isSignTypeInList122 } from "@shared/sign-list-122";
 
 export class PostgresStorage implements IStorage {
   private db;
@@ -152,15 +153,20 @@ export class PostgresStorage implements IStorage {
 
   // Annotation methods
   async createAnnotation(insertAnnotation: InsertAnnotation): Promise<Annotation> {
+    const annotationData: InsertAnnotation = {
+      ...insertAnnotation,
+      belongsToList122: isSignTypeInList122(insertAnnotation.signType),
+    };
+
     // If folderId is not provided but videoId is, get folderId from the video
-    if (!insertAnnotation.folderId && insertAnnotation.videoId) {
-      const [video] = await this.db.select().from(videos).where(eq(videos.id, insertAnnotation.videoId)).limit(1);
+    if (!annotationData.folderId && annotationData.videoId) {
+      const [video] = await this.db.select().from(videos).where(eq(videos.id, annotationData.videoId)).limit(1);
       if (video && video.folderId) {
-        insertAnnotation.folderId = video.folderId;
+        annotationData.folderId = video.folderId;
       }
     }
     
-    const [annotation] = await this.db.insert(annotations).values(insertAnnotation).returning();
+    const [annotation] = await this.db.insert(annotations).values(annotationData).returning();
     return annotation;
   }
 
@@ -369,6 +375,7 @@ export class PostgresStorage implements IStorage {
         gpsLat: cluster.gpsLat,
         gpsLon: cluster.gpsLon,
         signType: cluster.signType,
+        belongsToList122: isSignTypeInList122(cluster.signType),
         classificationConfidence: avgClassificationConfidence,
         detectionConfidence: avgDetectionConfidence,
         isFiltered: cluster.isFiltered,

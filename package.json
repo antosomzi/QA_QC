@@ -11,7 +11,9 @@
     "db:push": "drizzle-kit push",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:generate": "drizzle-kit generate",
-    "setup:signs": "node scripts/setup-signs.js"
+    "setup:signs": "node scripts/setup-signs.js",
+    "db:backfill:belongs-to-list-122": "tsx scripts/backfill-belongs-to-list-122.ts",
+    "db:backfill:belongs-to-list-122:dry": "tsx scripts/backfill-belongs-to-list-122.ts --dry-run"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1000.0",

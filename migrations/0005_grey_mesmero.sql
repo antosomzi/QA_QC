@@ -1,0 +1,1 @@
+ALTER TABLE "annotations" RENAME COLUMN "appartientliste122" TO "belongs_to_list_122";

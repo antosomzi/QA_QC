@@ -73,6 +73,7 @@ export const annotations = pgTable("annotations", {
   folderId: varchar("folder_id").references(() => folders.id, { onDelete: "cascade" }).notNull(), // Required folder reference
   videoId: varchar("video_id").references(() => videos.id, { onDelete: "cascade" }), // Optional video reference
   signType: varchar("sign_type", { length: 50 }).notNull(), // Sign type ID (required)
+  belongsToList122: boolean("belongs_to_list_122"),
   gpsLat: real("gps_lat").notNull(),
   gpsLon: real("gps_lon").notNull(),
   classificationConfidence: real("classification_confidence"),

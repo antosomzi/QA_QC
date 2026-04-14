@@ -91,7 +91,6 @@ export async function uploadVideoToS3(localPath: string, s3Key: string): Promise
 
     parallelUploads3.on("httpUploadProgress", (progress) => {
       // LOG TRÈS IMPORTANT : On regarde ce qu'AWS nous envoie
-      console.log(`📡 [S3 Event] loaded: ${progress.loaded}, total: ${progress.total}`);
 
       // FIX : Si AWS ne donne pas le 'total', on utilise notre 'fileSize' manuel
       const totalToUse = progress.total || fileSize; 

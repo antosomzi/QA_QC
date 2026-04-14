@@ -72,7 +72,7 @@ export default function AnnotationList({
         }
         return aTime - bTime;
       });
-    }, [annotations, boundingBoxes]);
+  }, [annotations, boundingBoxes]);
 
   return (
     // AJOUT: w-full pour qu'il s'adapte à son parent
@@ -113,7 +113,8 @@ export default function AnnotationList({
               a.detectionConfidence !== null && 
               a.detectionConfidence < 0.3
             ).length;
-            
+            const notIn122Count = annotations.filter(a => !a.belongsToList122).length;
+          
             return (
               <>
                 <span className={`text-xs px-2 py-1 rounded font-medium whitespace-nowrap ${lowClassificationCount > 0 ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'}`}>
@@ -121,6 +122,9 @@ export default function AnnotationList({
                 </span>
                 <span className={`text-xs px-2 py-1 rounded font-medium whitespace-nowrap ${lowDetectionCount > 0 ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'}`}>
                   ⚠️ Local: {lowDetectionCount}
+                </span>
+                <span className={`text-xs px-2 py-1 rounded font-medium whitespace-nowrap ${notIn122Count > 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-muted text-muted-foreground'}`}>
+                  ⚠️ Not in 122: {notIn122Count}
                 </span>
               </>
             );
@@ -143,6 +147,7 @@ export default function AnnotationList({
             const annotationColor = getAnnotationColor(annotations, annotation.id);
             const signType = annotation.signType ? getSignTypeById(annotation.signType) : null;
             const lowConfidence = getLowConfidenceIssue(annotation);
+            const notIn122Count= !annotation.belongsToList122;
             return (
             <div
               ref={annotation.id === selectedAnnotationId ? selectedAnnotationRef : null}
@@ -181,6 +186,7 @@ export default function AnnotationList({
                       {lowConfidence.isLowConfidence && (
                         <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
                       )}
+                      {notIn122Count && <AlertTriangle className="w-4 h-4 text-yellow-500 flex-shrink-0" />}
                     </div>
                   </div>
                 </div>
