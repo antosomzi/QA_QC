@@ -1,4 +1,4 @@
-import signCodesJson from "../client/public/sign_codes.json";
+import signCodesJson from "./sign_codes.json";
 
 const parsedSignCodes = Array.isArray(signCodesJson)
   ? signCodesJson.filter((code): code is string => typeof code === "string")
