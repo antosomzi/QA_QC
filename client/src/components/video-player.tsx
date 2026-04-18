@@ -377,25 +377,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
   }, []);
 
   // Listen for spacebar to toggle play/pause
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if typing in an input field
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
-      }
-
-      if (e.code === 'Space') {
-        e.preventDefault(); // Prevent page scroll
-        togglePlayPause();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [togglePlayPause]);
-
   const cyclePlaybackRate = useCallback(() => {
     if (!videoRef.current) return;
 
@@ -407,35 +388,62 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
     setPlaybackRate(nextRate);
   }, [playbackRate]);
 
-  // Frame navigation - directly manipulate video.currentTime
-  const goToPreviousFrame = useCallback(() => {
-    if (fps && videoRef.current) {
-      const actualFrame = calculateFrameFromTime(videoRef.current.currentTime, fps, ptsData);
-      if (actualFrame > 0) {
-        const targetFrame = actualFrame - 1;
-        const targetTime = calculateTimeFromFrame(targetFrame, fps, ptsData);
-        videoRef.current.currentTime = targetTime;
-        setCurrentTime(targetTime);
-        lastFrameRef.current = targetFrame;
-        onFrameChange(targetFrame);
-      }
-    }
-  }, [fps, ptsData, videoRef, onFrameChange]);
+  // Time navigation - jump by fixed seconds
+  const seekBySeconds = useCallback((deltaSeconds: number) => {
+    if (!videoRef.current || !fps || !duration) return;
 
-  const goToNextFrame = useCallback(() => {
-    if (fps && duration && videoRef.current) {
-      const actualFrame = calculateFrameFromTime(videoRef.current.currentTime, fps, ptsData);
-      const totalFrames = ptsData ? ptsData.length : Math.floor(duration * fps);
-      if (actualFrame < totalFrames - 1) {
-        const targetFrame = actualFrame + 1;
-        const targetTime = calculateTimeFromFrame(targetFrame, fps, ptsData);
-        videoRef.current.currentTime = targetTime;
-        setCurrentTime(targetTime);
-        lastFrameRef.current = targetFrame;
-        onFrameChange(targetFrame);
+    const current = videoRef.current.currentTime;
+    const targetTime = Math.max(0, Math.min(duration, current + deltaSeconds));
+    videoRef.current.currentTime = targetTime;
+    setCurrentTime(targetTime);
+
+    const targetFrame = calculateFrameFromTime(targetTime, fps, ptsData);
+    lastFrameRef.current = targetFrame;
+    onFrameChange(targetFrame);
+  }, [fps, duration, ptsData, onFrameChange]);
+
+  const goBack5Seconds = useCallback(() => {
+    seekBySeconds(-5);
+  }, [seekBySeconds]);
+
+  const goForward5Seconds = useCallback(() => {
+    seekBySeconds(5);
+  }, [seekBySeconds]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if typing in an input field
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target instanceof HTMLElement && e.target.isContentEditable)
+      ) {
+        return;
       }
-    }
-  }, [fps, ptsData, duration, videoRef, onFrameChange]);
+
+      if (e.code === 'Space') {
+        e.preventDefault(); // Prevent page scroll
+        togglePlayPause();
+        return;
+      }
+
+      if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        goBack5Seconds();
+        return;
+      }
+
+      if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        goForward5Seconds();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [togglePlayPause, goBack5Seconds, goForward5Seconds]);
 
   // Canvas drawing functions
   const getCanvasCoordinatesLocal = useCallback((e: React.MouseEvent) => {
@@ -966,25 +974,25 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
                 </div>
                 <div className="flex items-center space-x-2">
                   <Button
-                    onClick={goToPreviousFrame}
+                    onClick={goBack5Seconds}
                     size="sm"
                     variant="ghost"
                     className="text-white hover:text-white hover:bg-white/20 border-0"
-                    disabled={fps ? getActualFrame() <= 0 : true}
+                    disabled={!duration || currentTime <= 0}
                     data-testid="button-previous-frame"
                   >
                     <SkipBack className="w-4 h-4 mr-1" />
-                    Frame
+                    5s
                   </Button>
                   <Button
-                    onClick={goToNextFrame}
+                    onClick={goForward5Seconds}
                     size="sm"
                     variant="ghost"
                     className="text-white hover:text-white hover:bg-white/20 border-0"
-                    disabled={fps && duration ? getActualFrame() >= totalFrames - 1 : true}
+                    disabled={!duration || currentTime >= duration}
                     data-testid="button-next-frame"
                   >
-                    Frame
+                    5s
                     <SkipForward className="w-4 h-4 ml-1" />
                   </Button>
                 </div>
