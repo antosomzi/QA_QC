@@ -124,7 +124,7 @@ export default function AnnotationList({
                   ⚠️ Local: {lowDetectionCount}
                 </span>
                 <span className={`text-xs px-2 py-1 rounded font-medium whitespace-nowrap ${notIn122Count > 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-muted text-muted-foreground'}`}>
-                  ⚠️ Not in 392: {notIn122Count}
+                  ⚠️ Not in 127: {notIn122Count}
                 </span>
               </>
             );
