@@ -1,5 +1,18 @@
 # VFR & PTS-Based Frame Synchronization
 
+## Runtime Mode (auto CFR/VFR)
+
+Le comportement de synchronisation est détecté automatiquement à l’upload :
+
+- Le serveur extrait les PTS via ffprobe.
+- Il compare les intervalles réels entre frames à `1/fps`.
+- Si la variance est faible (CFR effectif) : `videos.pts_data = null`.
+- Sinon (VFR) : `videos.pts_data` est stocké.
+
+Le frontend appelle toujours `GET /api/videos/:id/pts` :
+- VFR → renvoie les PTS
+- CFR effectif → renvoie `{ ptsData: null }`
+
 ## The Problem: Variable Frame Rate (VFR) Videos
 
 ### What is VFR?

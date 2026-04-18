@@ -14,6 +14,28 @@ import { deleteTempFile } from "./route-services";
 
 const { Pool } = pg;
 
+async function resolvePtsDataForUpload(
+  videoFilePath: string,
+  isEffectivelyCfr: boolean | null,
+  logPrefix: string,
+): Promise<number[] | null> {
+  console.log(`[${logPrefix}] Auto frame-sync detection started (CFR/VFR)`);
+
+  if (isEffectivelyCfr === true) {
+    console.log(`[${logPrefix}] Frame-sync decision: CFR => skip PTS extraction`);
+    return null;
+  }
+
+  try {
+    const extractedPts = await extractPtsData(videoFilePath);
+    console.log(`[${logPrefix}] Frame-sync decision: VFR/unknown => store PTS (${extractedPts.length} frames)`);
+    return extractedPts;
+  } catch (error) {
+    console.warn(`[${logPrefix}] Failed to auto-detect frame-sync mode from PTS:`, error);
+    return null;
+  }
+}
+
 // Configure multer for file uploads
 const upload = multer({
   storage: multer.diskStorage({
@@ -297,12 +319,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         width: req.body.width ? parseInt(req.body.width) : 0,
         height: req.body.height ? parseInt(req.body.height) : 0,
       };
+      let isEffectivelyCfr: boolean | null = null;
 
       if (!alreadyInS3) {
         // Extraction des métadonnées réelles uniquement si la vidéo n'est pas déjà sur S3
         try {
           const metadata = await getVideoMetadata(tempPath);
-          videoData = { ...videoData, ...metadata }; // Écrase les valeurs par défaut
+          videoData = {
+            ...videoData,
+            fps: metadata.fps,
+            duration: metadata.duration,
+            width: metadata.width,
+            height: metadata.height,
+          };
+          isEffectivelyCfr = metadata.isEffectivelyCfr;
         } catch (e) {
           console.warn(
             `[upload-video] Metadata probe failed, using defaults:`,
@@ -310,14 +340,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           );
         }
 
-        try {
-          videoData.ptsData = await extractPtsData(tempPath);
-        } catch (e) {
-          console.warn(
-            `[upload-video] PTS extraction failed:`,
-            e instanceof Error ? e.message : String(e),
-          );
-        }
+        videoData.ptsData = await resolvePtsDataForUpload(tempPath, isEffectivelyCfr, "upload-video");
       }
 
     
@@ -365,10 +388,18 @@ app.post("/api/folders/:folderId/videos", upload.single('video'), async (req, re
 
       const videoFilePath = path.join('uploads', req.file.filename);
       let extractedMetadata = { fps: 30, duration: 0, width: 0, height: 0 };
+      let isEffectivelyCfr: boolean | null = null;
       let ptsData: null | number[] = null;
       
       try {
-        extractedMetadata = await getVideoMetadata(videoFilePath);
+        const metadata = await getVideoMetadata(videoFilePath);
+        extractedMetadata = {
+          fps: metadata.fps,
+          duration: metadata.duration,
+          width: metadata.width,
+          height: metadata.height,
+        };
+        isEffectivelyCfr = metadata.isEffectivelyCfr;
         console.log(`[upload] Extracted metadata from video: fps=${extractedMetadata.fps}, duration=${extractedMetadata.duration}`);
       } catch (probeError) {
         console.warn(`[upload] Failed to probe video metadata, using defaults:`, probeError);
@@ -380,12 +411,7 @@ app.post("/api/folders/:folderId/videos", upload.single('video'), async (req, re
         };
       }
 
-      try {
-        ptsData = await extractPtsData(videoFilePath);
-        console.log(`[upload] Extracted ${ptsData.length} PTS values`);
-      } catch (ptsError) {
-        console.warn(`[upload] Failed to extract PTS data (VFR navigation will fall back to CFR):`, ptsError);
-      }
+      ptsData = await resolvePtsDataForUpload(videoFilePath, isEffectivelyCfr, "upload");
 
       const videoData = {
         filename: req.file.filename,
@@ -533,6 +559,7 @@ app.post("/api/folders/:folderId/videos", upload.single('video'), async (req, re
       if (!video) {
         return res.status(404).json({ message: "Video not found" });
       }
+
       // ptsData is a JSONB column — may be null for older videos uploaded before this feature
       res.json({ ptsData: video.ptsData ?? null });
     } catch (error) {

@@ -5,6 +5,7 @@ import type { Annotation, BoundingBox } from "@shared/schema";
 import { getAnnotationCSSColor, getAnnotationIndex, getAnnotationHexColor, getAnnotationColor, getLowConfidenceIssue } from "./helpers/video-player-helpers";
 import EditAnnotationModal from "./edit-annotation-modal";
 import { getSignTypeById } from "@/data/sign-types";
+import { LOW_CONFIDENCE_THRESHOLD } from "@/lib/confidence-threshold";
 
 interface AnnotationListProps {
   annotations: Annotation[];
@@ -106,12 +107,12 @@ export default function AnnotationList({
             const lowClassificationCount = annotations.filter(a => 
               a.classificationConfidence !== undefined && 
               a.classificationConfidence !== null && 
-              a.classificationConfidence < 0.3
+              a.classificationConfidence < LOW_CONFIDENCE_THRESHOLD
             ).length;
             const lowDetectionCount = annotations.filter(a => 
               a.detectionConfidence !== undefined && 
               a.detectionConfidence !== null && 
-              a.detectionConfidence < 0.3
+              a.detectionConfidence < LOW_CONFIDENCE_THRESHOLD
             ).length;
             const notIn122Count = annotations.filter(a => !a.belongsToList122).length;
           
@@ -146,7 +147,7 @@ export default function AnnotationList({
           sortedAnnotations.map((annotation) => {
             const annotationColor = getAnnotationColor(annotations, annotation.id);
             const signType = annotation.signType ? getSignTypeById(annotation.signType) : null;
-            const lowConfidence = getLowConfidenceIssue(annotation);
+            const lowConfidence = getLowConfidenceIssue(annotation, LOW_CONFIDENCE_THRESHOLD);
             const notIn122Count= !annotation.belongsToList122;
             return (
             <div

@@ -11,7 +11,6 @@ import {
   setCursorForHandle,
   calculateFrameFromTime,
   calculateTimeFromFrame,
-  ptsDataBinarySearch,
   isValidBoundingBoxSize,
   createBoundingBoxData,
   drawBoundingBox,
@@ -281,11 +280,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
     const updateFrameLoop = (now: number, metadata: VideoFrameCallbackMetadata) => {
       // metadata.mediaTime is the EXACT time of the frame displayed on screen
       const exactTime = metadata.mediaTime;
-      // Use PTS binary search for VFR, fallback to CFR calculation
       const pts = ptsDataRef.current;
       const exactFrame = pts && pts.length > 0
-        ? ptsDataBinarySearch(pts, exactTime)
-        : Math.floor(exactTime * fps + 0.001);
+        ? calculateFrameFromTime(exactTime, fps, pts)
+        : calculateFrameFromTime(exactTime, fps);
 
       // IMMEDIATE: Draw canvas directly in the callback (no React lag)
       drawCanvasForFrame(exactFrame);
@@ -837,7 +835,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
   }, []);
 
 
-  const totalFrames = ptsData ? ptsData.length : (fps && duration ? Math.floor(duration * fps) : 0);
+  const totalFrames = ptsData
+    ? ptsData.length
+    : (fps && duration ? Math.floor(duration * fps) : 0);
 
   return (
     <div className="h-full flex flex-col">

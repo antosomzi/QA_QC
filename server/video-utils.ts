@@ -7,6 +7,39 @@ export interface VideoMetadata {
   width: number;
   height: number;
   ptsData: number[] | null; // Array of PTS (seconds) per frame — null if extraction fails
+  isEffectivelyCfr: boolean | null; // true=CFR, false=VFR, null=unknown
+}
+
+async function detectEffectivelyCfrWithVfrdet(filePath: string): Promise<boolean | null> {
+  return new Promise((resolve) => {
+    const SAMPLE_SECONDS = 20;
+    execFile(
+      'ffmpeg',
+      ['-i', filePath, '-t', String(SAMPLE_SECONDS), '-vf', 'vfrdet', '-an', '-f', 'null', '-'],
+      { maxBuffer: 20 * 1024 * 1024, timeout: 30_000 },
+      (err, _stdout, stderr) => {
+        const output = stderr || '';
+        const match = output.match(/VFR:([0-9]*\.?[0-9]+)/);
+
+        if (!match) {
+          console.warn(`[video-utils] vfrdet output did not contain VFR score for ${filePath}${err ? ` (${err.message})` : ''}`);
+          resolve(null);
+          return;
+        }
+
+        const vfrScore = parseFloat(match[1]);
+        if (Number.isNaN(vfrScore)) {
+          resolve(null);
+          return;
+        }
+
+        // vfrdet score 0 means effectively CFR. Keep a tiny tolerance for floating noise.
+        const isEffectivelyCfr = vfrScore <= 0.001;
+        console.log(`[video-utils] vfrdet sample=${SAMPLE_SECONDS}s score=${vfrScore.toFixed(6)} => ${isEffectivelyCfr ? 'CFR' : 'VFR'}`);
+        resolve(isEffectivelyCfr);
+      },
+    );
+  });
 }
 
 /**
@@ -35,7 +68,9 @@ function isReasonableFps(fps: number | null): fps is number {
  * Extract video metadata using ffprobe
  * Returns precise FPS (e.g., 29.97, 29.99, 30.0) rather than rounded values
  */
-export function getVideoMetadata(filePath: string): Promise<VideoMetadata> {
+export async function getVideoMetadata(filePath: string): Promise<VideoMetadata> {
+  const isEffectivelyCfr = await detectEffectivelyCfrWithVfrdet(filePath);
+
   return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(filePath, (err, metadata) => {
       if (err) {
@@ -87,6 +122,7 @@ export function getVideoMetadata(filePath: string): Promise<VideoMetadata> {
         width: videoStream.width || 0,
         height: videoStream.height || 0,
         ptsData: null, // Will be populated separately by extractPtsData
+        isEffectivelyCfr,
       };
 
       console.log(`[video-utils] Extracted metadata for ${filePath}:`, result);
@@ -132,3 +168,4 @@ export function extractPtsData(filePath: string): Promise<number[]> {
     });
   });
 }
+

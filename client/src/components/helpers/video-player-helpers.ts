@@ -410,20 +410,18 @@ export function isValidBoundingBoxSize(bbox: { width: number; height: number }, 
 export function getLowConfidenceIssue(annotation: Annotation & { 
   classificationConfidence?: number | null;
   detectionConfidence?: number | null;
-}): {
+}, lowConfidenceThreshold: number): {
   isLowConfidence: boolean;
   lowClassification: boolean;
   lowDetection: boolean;
 } {
-  const LOW_CONFIDENCE_THRESHOLD = 0.3;
-  
   const lowClassification = annotation.classificationConfidence !== undefined && 
                             annotation.classificationConfidence !== null && 
-                            annotation.classificationConfidence < LOW_CONFIDENCE_THRESHOLD;
+                            annotation.classificationConfidence < lowConfidenceThreshold;
   
   const lowDetection = annotation.detectionConfidence !== undefined && 
                        annotation.detectionConfidence !== null && 
-                       annotation.detectionConfidence < LOW_CONFIDENCE_THRESHOLD;
+                       annotation.detectionConfidence < lowConfidenceThreshold;
   
   return {
     isLowConfidence: lowClassification || lowDetection,

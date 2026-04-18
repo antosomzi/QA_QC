@@ -3,6 +3,7 @@ import { AlertTriangle, Edit, Trash2, Triangle, Search } from "lucide-react";
 import type { Annotation, BoundingBox } from "@shared/schema";
 import { getLowConfidenceIssue } from "./helpers/video-player-helpers";
 import { getSignTypeById } from "@/data/sign-types";
+import { LOW_CONFIDENCE_THRESHOLD } from "@/lib/confidence-threshold";
 import { Button } from "./ui/button";
 import EditAnnotationModal from "./edit-annotation-modal";
 import React, { useState } from "react";
@@ -55,7 +56,7 @@ export default function BoundingBoxList({
           
             {/* Low confidence alert */}
             {(() => {
-              const lowConfidence = getLowConfidenceIssue(annotation);
+              const lowConfidence = getLowConfidenceIssue(annotation, LOW_CONFIDENCE_THRESHOLD);
               if (!lowConfidence.isLowConfidence) return null;
 
               let title = "Low confidence";

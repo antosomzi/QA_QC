@@ -45,6 +45,11 @@ const gpsPoint = getGPSForFrame(gpsPoints, frameIndex, fps);
 ### Video Player Frame Management
 The video player uses a sophisticated frame synchronization system with **VFR (Variable Frame Rate) support** via PTS data. See [`explication/vfr_pts_frame_sync.md`](../explication/vfr_pts_frame_sync.md) for full documentation.
 
+**Automatic frame sync mode (CFR vs PTS):**
+- At upload, the server extracts PTS and auto-detects whether timing is effectively CFR or VFR.
+- If effectively CFR: `videos.ptsData = null` and player uses CFR math.
+- If VFR: `videos.ptsData` is stored and player uses PTS-aware navigation.
+
 **PTS-Based Navigation (VFR-safe):**
 ```typescript
 // Frame → Time: look up actual PTS timestamp, seek to midpoint for reliable display
@@ -57,8 +62,8 @@ const frameIndex = ptsDataBinarySearch(ptsData, mediaTime);
 
 **Key Video Player Insights:**
 - Videos are often VFR (variable frame rate) — `frame/fps` does NOT reliably map to the correct time
-- At upload, ffprobe extracts per-frame PTS timestamps stored as `ptsData` JSONB in the `videos` table
-- Frontend fetches PTS via `GET /api/videos/:id/pts`, passes to VideoPlayer as a prop
+- At upload, ffprobe extracts per-frame PTS timestamps and auto-classifies CFR vs VFR.
+- Frontend always fetches `GET /api/videos/:id/pts`; the endpoint returns PTS for VFR videos and `{ ptsData: null }` for effectively CFR videos.
 - `calculateTimeFromFrame(frame, fps, ptsData)` and `calculateFrameFromTime(time, fps, ptsData)` handle both VFR (PTS lookup/binary search) and CFR (fallback math) transparently
 - All 7 navigation paths use these PTS-aware helpers: `seekToFrame`, `goToNextFrame`, `goToPreviousFrame`, `getActualFrame`, rVFC loop, `handleTimeUpdate`, progress bar drag
 - When `ptsData` is `null` (legacy uploads), the system falls back to CFR math: `(frame + 0.3) / fps` for seeking, `Math.floor(time * fps + 0.001)` for frame calculation
