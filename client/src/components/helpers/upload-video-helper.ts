@@ -19,45 +19,14 @@ type UseVideoUploadWithProgressOptions = {
   onSuccess?: () => void;
 };
 
-async function getVideoMetadata(file: File): Promise<{ duration: number; width: number; height: number } | null> {
-  return new Promise((resolve) => {
-    const video = document.createElement("video");
-    video.preload = "metadata";
-
-    video.onloadedmetadata = () => {
-      const metadata = {
-        duration: video.duration,
-        width: video.videoWidth,
-        height: video.videoHeight,
-      };
-      URL.revokeObjectURL(video.src);
-      resolve(metadata);
-    };
-
-    video.onerror = () => {
-      URL.revokeObjectURL(video.src);
-      resolve(null);
-    };
-
-    video.src = URL.createObjectURL(file);
-  });
-}
-
 export async function uploadVideoWithContext({ file, folderId, projectId, onProgress }: UploadVideoOptions): Promise<UploadVideoResult> {
   if (!folderId && !projectId) {
     throw new Error("Missing folderId or projectId for video upload");
   }
 
+  // On crée le FormData et on y met UNIQUEMENT le fichier vidéo
   const formData = new FormData();
   formData.append("video", file);
-
-  const metadata = await getVideoMetadata(file);
-  if (metadata) {
-    formData.append("duration", metadata.duration.toString());
-    formData.append("fps", "30");
-    formData.append("width", metadata.width.toString());
-    formData.append("height", metadata.height.toString());
-  }
 
   const uploadEndpoint = folderId
     ? `/api/folders/${folderId}/videos`

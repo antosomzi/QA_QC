@@ -58,8 +58,9 @@ export default function MapPanel({
         return;
       }
 
-      const map = window.L.map(mapContainerRef.current).setView([34.8628, -85.5027], 10);
-      
+    const map = window.L.map(mapContainerRef.current, {
+      preferCanvas: true 
+    }).setView([34.8628, -85.5027], 10);      
       if (useSatelliteView) {
         window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
           attribution: '© Esri, Maxar, Earthstar Geographics, and the GIS User Community',
