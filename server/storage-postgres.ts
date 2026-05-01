@@ -25,14 +25,10 @@ import {
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { IStorage } from "./storage";
 import { isSignTypeInList122 } from "@shared/sign-list-122";
+import { db } from "./db";
 
 export class PostgresStorage implements IStorage {
-  private db;
-
-  constructor(connectionString: string) {
-    const client = postgres(connectionString);
-    this.db = drizzle(client);
-  }
+  constructor(private db: any) {}
 
   // Project methods
   async createProject(projectData: InsertProject): Promise<Project> {
@@ -42,6 +38,11 @@ export class PostgresStorage implements IStorage {
 
   async getProject(id: string): Promise<Project | undefined> {
     const [project] = await this.db.select().from(projects).where(eq(projects.id, id)).limit(1);
+    return project;
+  }
+
+  async getProjectByName(name: string): Promise<Project | undefined> {
+    const [project] = await this.db.select().from(projects).where(eq(projects.name, name)).limit(1);
     return project;
   }
 
@@ -440,3 +441,5 @@ export class PostgresStorage implements IStorage {
     }
   }
 }
+
+export const storage = new PostgresStorage(db);

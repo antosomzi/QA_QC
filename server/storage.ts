@@ -13,6 +13,8 @@ import {
   type BoundingBox,
   type AnnotationWithBoundingBoxes
 } from "@shared/schema";
+import { PostgresStorage } from "./storage-postgres";
+import { db } from "./db";
 
 export interface IStorage {
   // Project methods
@@ -57,8 +59,3 @@ export interface IStorage {
   deleteAnnotationsByFolder(folderId: string): Promise<void>;
 }
 
-// Directly export the PostgreSQL storage instance
-export async function initializeStorage() {
-  const { PostgresStorage } = await import("./storage-postgres");
-  return new PostgresStorage(process.env.DATABASE_URL!);
-}
