@@ -34,6 +34,7 @@ export default function AnnotationList({
 }: AnnotationListProps) {
   const [editingAnnotation, setEditingAnnotation] = useState<Annotation | null>(null);
   const selectedAnnotationRef = useRef<HTMLDivElement>(null);
+  const [isignFrequencyMode,setSignFrequencyMode] = useState<boolean>(false)
 
   // Scroll to the selected annotation when it changes
   useEffect(() => {
@@ -46,6 +47,10 @@ export default function AnnotationList({
       });
     }
   }, [selectedAnnotationId]);
+  
+  const OnShowSignFrequency= () =>{
+    setSignFrequencyMode(!isignFrequencyMode)
+  }
 
   const formatCoordinate = (coord: number, isLat: boolean) => {
     const abs = Math.abs(coord);
@@ -76,10 +81,8 @@ export default function AnnotationList({
   }, [annotations, boundingBoxes]);
 
   return (
-    // AJOUT: w-full pour qu'il s'adapte à son parent
     <div className="h-full w-full flex flex-col">
       
-      {/* MODIFICATION: flex-wrap et gap-3 pour permettre de passer à la ligne sur les petits panneaux */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h3 className="text-lg font-medium">Signs</h3>
@@ -99,9 +102,16 @@ export default function AnnotationList({
           >
             {isFilteredMode ? 'Remove filtered signs' : 'Show filtered signs'}
           </Button>
+          <Button
+            className={`h-8 px-3 text-sm font-medium text-white ${
+              isAddSignDrawingMode ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'
+            }`}
+            onClick={OnShowSignFrequency}
+          >
+            {isignFrequencyMode ? 'Return to list of signs' : 'Show signs frequency'}
+          </Button>
         </div>
         
-        {/* MODIFICATION: flex-wrap ici aussi au cas où il y a beaucoup de compteurs */}
         <div className="flex flex-wrap items-center gap-2">
           {(() => {
             const lowClassificationCount = annotations.filter(a => 
@@ -137,7 +147,9 @@ export default function AnnotationList({
           </span>
         </div>
       </div>
-
+      {isignFrequencyMode ? (
+        <FrequencyList sortedAnnotations={sortedAnnotations}/>
+      ) : (
       <div className="space-y-2 overflow-y-auto flex-1 min-h-0 pr-1">
         {annotations.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
@@ -228,6 +240,7 @@ export default function AnnotationList({
           })
         )}
       </div>
+      )}
 
       {editingAnnotation && (
         <EditAnnotationModal
@@ -239,6 +252,94 @@ export default function AnnotationList({
           onClose={() => setEditingAnnotation(null)}
         />
       )}
+    </div>
+  );
+}
+
+
+type FrequencyStats = {
+  count: number;
+  lowClassificationCount: number;
+  lowDetectionCount: number;
+};
+
+interface FrequencyListProps {
+  sortedAnnotations: Annotation[];
+}
+
+function FrequencyList({ sortedAnnotations }: FrequencyListProps) {
+  const frequencyBySignType: Record<string, FrequencyStats> = {};
+
+  for (const annotation of sortedAnnotations) {
+    const signType = annotation.signType ?? "unknown";
+    const stats =
+      frequencyBySignType[signType] ??
+      (frequencyBySignType[signType] = {
+        count: 0,
+        lowClassificationCount: 0,
+        lowDetectionCount: 0
+      });
+
+    stats.count += 1;
+
+    if (
+      annotation.classificationConfidence !== undefined &&
+      annotation.classificationConfidence !== null &&
+      annotation.classificationConfidence < LOW_CONFIDENCE_THRESHOLD
+    ) {
+      stats.lowClassificationCount += 1;
+    }
+
+    if (
+      annotation.detectionConfidence !== undefined &&
+      annotation.detectionConfidence !== null &&
+      annotation.detectionConfidence < LOW_CONFIDENCE_THRESHOLD
+    ) {
+      stats.lowDetectionCount += 1;
+    }
+  }
+
+  return (
+    <div className="space-y-2 overflow-y-auto flex-1 min-h-0 pr-1">
+      {Object.entries(frequencyBySignType).map(([sign, frequency]) => {
+        const signType = sign ? getSignTypeById(sign) : null;
+
+        return (
+        <div
+          key={sign}
+          className="p-3 rounded-md border bg-card border-border flex items-center gap-3"
+        >
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            {signType && (
+              <img
+                src={signType.imagePath}
+                alt={signType.name}
+                className="w-6 h-6 object-contain flex-shrink-0"
+                loading="lazy"
+              />
+            )}
+            <div className="text-sm font-medium truncate">{signType?.name ?? sign}</div>
+          </div>
+          <div className="flex items-center gap-2 text-xs ml-auto">
+            {frequency.lowClassificationCount > 0 && (
+              <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-medium inline-flex items-center gap-1">
+                <AlertTriangle className="w-4 h-4 text-red-600" />
+                Classif: {frequency.lowClassificationCount}
+              </span>
+            )}
+            {frequency.lowDetectionCount > 0 && (
+              <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-medium inline-flex items-center gap-1">
+                <AlertTriangle className="w-4 h-4 text-red-600" />
+                Local: {frequency.lowDetectionCount}
+              </span>
+            )}
+            <span className="bg-primary/10 text-primary px-2 py-1 rounded font-medium">
+              Total: {frequency.count}
+            </span>
+          </div>
+        </div>
+        );
+      })}
     </div>
   );
 }

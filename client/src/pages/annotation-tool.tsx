@@ -853,7 +853,6 @@ export default function AnnotationTool() {
                       onAddAnnotation={handleAddAnnotation}
                       isFilteredMode={isFilteredMode}
                       onShowFilteredSigns={onShowFilteredSigns}
-
                     />
                   </div>
                 </div>
