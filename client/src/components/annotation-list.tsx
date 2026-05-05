@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Edit, Trash2, AlertTriangle, Search } from "lucide-react";
+import { Edit, Trash2, AlertTriangle, Search, Check } from "lucide-react";
 import type { Annotation, BoundingBox } from "@shared/schema";
 import { getAnnotationCSSColor, getAnnotationIndex, getAnnotationHexColor, getAnnotationColor, getLowConfidenceIssue } from "./helpers/video-player-helpers";
 import EditAnnotationModal from "./edit-annotation-modal";
@@ -191,7 +191,9 @@ export default function AnnotationList({
                     </div>
                   </div>
                 </div>
-                
+                <div>
+                  <input type='checkbox' onClick={(e)=>e.stopPropagation()}/>
+                </div>
                 <div className="flex items-center space-x-1 flex-shrink-0">
                   <Button
                     size="sm"

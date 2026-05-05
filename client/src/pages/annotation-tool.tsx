@@ -186,6 +186,10 @@ export default function AnnotationTool() {
 
   const handleVideoDelete = useCallback(async () => {
     if (!selectedVideo) return;
+
+     if (!window.confirm("Are you sure you want to delete this annotation? This action cannot be undone.")) {
+      return;
+    }
     
     try {
       await apiRequest("DELETE", `/api/videos/${selectedVideo.id}`);
@@ -288,31 +292,6 @@ export default function AnnotationTool() {
     }
   }, [folderId, toast, queryClient]);
 
-  const handleBoundingBoxDelete = useCallback(async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this bounding box? This action cannot be undone.")) {
-      return;
-    }
-
-    try {
-      await apiRequest("DELETE", `/api/bounding-boxes/${id}`);
-
-      // Invalidate the query to trigger automatic refetch
-      queryClient.invalidateQueries({
-        queryKey: ["folder-annotations-with-bboxes", folderId]
-      });
-
-      toast({
-        title: "Bounding box deleted",
-        description: "Bounding box has been removed.",
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to delete bounding box.",
-        variant: "destructive",
-      });
-    }
-  }, [folderId, toast, queryClient]);
 
   const handleFrameNavigate = useCallback((frame: number) => {
     navigateToFrame(frame);
@@ -536,7 +515,7 @@ export default function AnnotationTool() {
   }, [folderId, refetchAnnotations, toast, queryClient]);
 
   const handleAnnotationDelete = useCallback(async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this annotation? This action cannot be undone.")) {
+    if (!window.confirm("Are you sure you want to delete this video? This action cannot be undone.")) {
       return;
     }
 
